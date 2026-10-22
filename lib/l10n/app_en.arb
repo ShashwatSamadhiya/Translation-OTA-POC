@@ -1,0 +1,136 @@
+{
+  "@@locale": "en",
+  "welcomeTitle": "Welcome to AquaSetu",
+  "@welcomeTitle": {
+    "description": "Heading on the home and sign-in screens"
+  },
+  "welcomeSubtitle": "Your partner for healthier ponds and better harvests.",
+  "@welcomeSubtitle": {
+    "description": "Subheading on the home and sign-in screens"
+  },
+  "getStarted": "Get started",
+  "@getStarted": {
+    "description": "Primary button label on the home screen"
+  },
+  "chooseLanguage": "Choose your preferred language",
+  "@chooseLanguage": {
+    "description": "Heading on the language selection screen"
+  },
+  "retry": "Retry",
+  "@retry": {
+    "description": "Button that retries a failed action"
+  },
+  "resendOtpIn": "You can resend the OTP in {time}",
+  "@resendOtpIn": {
+    "description": "Countdown until the OTP can be resent",
+    "placeholders": {
+      "time": {
+        "type": "String",
+        "example": "04:59"
+      }
+    }
+  },
+  "optionalField": "{label} (Optional)",
+  "@optionalField": {
+    "description": "Label of an optional form field",
+    "placeholders": {
+      "label": {
+        "type": "String",
+        "example": "Pincode"
+      }
+    }
+  },
+  "farmerRegistered": "{name} registered",
+  "@farmerRegistered": {
+    "description": "Confirmation after a farmer is registered",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Ramesh Patil"
+      }
+    }
+  },
+  "weatherHumidity": "Humidity {humidity}%",
+  "@weatherHumidity": {
+    "description": "Relative humidity on the weather card",
+    "placeholders": {
+      "humidity": {
+        "type": "int"
+      }
+    }
+  },
+  "typeToSearchVillage": "Type at least {count} letters to search",
+  "@typeToSearchVillage": {
+    "description": "Shown in village search until enough letters are typed",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "launchpadComingSoon": "{title} is coming soon",
+  "@launchpadComingSoon": {
+    "description": "Shown when a home shortcut tile is tapped before its screen exists",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Ponds"
+      }
+    }
+  },
+  "pondCount": "{count, plural, =0{No ponds yet} =1{1 pond} other{{count} ponds}}",
+  "@pondCount": {
+    "description": "POC-only plural: number of ponds a farmer owns",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pocTitle": "Tolgee OTA POC",
+  "@pocTitle": {
+    "description": "App bar title of the POC screen"
+  },
+  "pocLanguage": "Language",
+  "@pocLanguage": {
+    "description": "Label of the language picker"
+  },
+  "pocSourceBundled": "Source: bundled ARB",
+  "@pocSourceBundled": {
+    "description": "Shown when no OTA translations are loaded"
+  },
+  "pocSourceCache": "Source: device cache",
+  "@pocSourceCache": {
+    "description": "Shown when OTA translations come from the local cache"
+  },
+  "pocSourceNetwork": "Source: Tolgee CDN",
+  "@pocSourceNetwork": {
+    "description": "Shown when OTA translations were just fetched"
+  },
+  "pocRefresh": "Fetch from CDN",
+  "@pocRefresh": {
+    "description": "Button that re-fetches OTA translations"
+  },
+  "pocCdnNotConfigured": "TOLGEE_CDN_URL is not set, showing bundled strings only",
+  "@pocCdnNotConfigured": {
+    "description": "Shown when the CDN URL is missing from env"
+  },
+  "pocRefreshFailed": "Could not fetch translations: {reason}",
+  "@pocRefreshFailed": {
+    "description": "Shown when the CDN fetch fails",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "pocOverriddenKeys": "{count} keys from OTA",
+  "@pocOverriddenKeys": {
+    "description": "Number of keys currently served from OTA",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

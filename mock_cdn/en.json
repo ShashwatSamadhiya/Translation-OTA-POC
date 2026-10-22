@@ -1,0 +1,8 @@
+{
+  "welcomeTitle": "Welcome to AquaSetu (from CDN)",
+  "retry": "Try again",
+  "pondCount": "{count, plural, =0{No ponds registered} one{# pond} other{# ponds}}",
+  "farmerRegistered": "{name} is now registered",
+  "optionalField": "",
+  "weatherHumidity": "Humidity {humidty}%"
+}

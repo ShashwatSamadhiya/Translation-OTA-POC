@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Mock CDN",
+      "type": "shell",
+      "command": "python3 -I -u tool/serve_mock_cdn.py",
+      "isBackground": true,
+      "presentation": { "reveal": "silent", "panel": "dedicated" },
+      "problemMatcher": {
+        "owner": "mock-cdn",
+        "pattern": { "regexp": "^__never_matches__$" },
+        "background": {
+          "activeAtBeginning": true,
+          "beginsPattern": "^Mock Tolgee CDN on",
+          "endsPattern": "^Mock Tolgee CDN on"
+        }
+      }
+    }
+  ]
+}
