@@ -68,7 +68,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get pocTitle => 'Tolgee OTA POC';
+  String get pocTitle => 'Firebase OTA POC';
 
   @override
   String get pocLanguage => 'Language';
@@ -80,14 +80,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pocSourceCache => 'Source: device cache';
 
   @override
-  String get pocSourceNetwork => 'Source: Tolgee CDN';
+  String get pocSourceNetwork => 'Source: Firestore';
 
   @override
-  String get pocRefresh => 'Fetch from CDN';
+  String get pocRefresh => 'Fetch from Firestore';
 
   @override
-  String get pocCdnNotConfigured =>
-      'TOLGEE_CDN_URL is not set, showing bundled strings only';
+  String get pocNotConfigured =>
+      'Firebase is not configured, showing bundled strings only';
 
   @override
   String pocRefreshFailed(String reason) {

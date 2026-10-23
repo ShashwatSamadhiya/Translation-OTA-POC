@@ -23,6 +23,28 @@ abstract final class IcuMessageFormatter {
       return null;
     }
   }
+
+  /// Names of every argument [message] references, including plural and
+  /// select arguments. Throws [FormatException] when the syntax is invalid.
+  static Set<String> argumentNames(String message) {
+    final names = <String>{};
+    void visit(List<_Node> nodes) {
+      for (final node in nodes) {
+        switch (node) {
+          case _Argument(:final name):
+            names.add(name);
+          case _Choice(:final name, :final branches):
+            names.add(name);
+            branches.values.forEach(visit);
+          case _Text() || _PluralValue():
+            break;
+        }
+      }
+    }
+
+    visit(_Parser(message).parse());
+    return names;
+  }
 }
 
 sealed class _Node {

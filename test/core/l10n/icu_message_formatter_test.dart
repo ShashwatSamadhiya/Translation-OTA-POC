@@ -28,7 +28,7 @@ void main() {
       expect(format('Humidity {h}%', args: {'h': 72}), 'Humidity 72%');
     });
 
-    test('returns null when an argument is missing (typo in Tolgee)', () {
+    test('returns null when an argument is missing (a typo in the translation)', () {
       expect(format('Humidity {humidty}%', args: {'humidity': 72}), isNull);
     });
 
@@ -86,6 +86,28 @@ void main() {
 
     test('falls back to other', () {
       expect(format(message, args: {'role': 'admin'}), 'Staff');
+    });
+  });
+
+  group('argumentNames', () {
+    test('collects plain, plural and nested arguments', () {
+      expect(
+        IcuMessageFormatter.argumentNames(
+          '{name}: {count, plural, =0{none} other{# {unit}}}',
+        ),
+        {'name', 'count', 'unit'},
+      );
+    });
+
+    test('returns an empty set for plain text', () {
+      expect(IcuMessageFormatter.argumentNames('Retry'), isEmpty);
+    });
+
+    test('throws on invalid syntax', () {
+      expect(
+        () => IcuMessageFormatter.argumentNames('{count, plural, one{x}'),
+        throwsFormatException,
+      );
     });
   });
 }

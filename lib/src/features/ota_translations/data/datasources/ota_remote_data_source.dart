@@ -1,52 +1,31 @@
-import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'package:dio/dio.dart';
+import '../../../../core/firebase/translations_firestore.dart';
 
-/// Reads Tolgee Content Delivery files: `<baseUrl>/<languageCode>.json`.
-class OtaRemoteDataSource {
-  const OtaRemoteDataSource({required this._dio, required this._baseUrl});
-
-  final Dio _dio;
-  final String _baseUrl;
-
-  /// Throws [DioException] on transport errors and [FormatException] when the
-  /// body is not a JSON object.
-  Future<Map<String, String>> fetch(String languageCode) async {
-    final base = _baseUrl.endsWith('/')
-        ? _baseUrl.substring(0, _baseUrl.length - 1)
-        : _baseUrl;
-    final response = await _dio.get<Object?>(
-      '$base/$languageCode.json',
-      // The CDN may serve JSON as text/plain or octet-stream; decode ourselves.
-      options: Options(responseType: ResponseType.plain),
-    );
-    return parseTolgeeJson(response.data);
-  }
+abstract interface class OtaRemoteDataSource {
+  /// Published `key -> message` for [languageCode].
+  ///
+  /// Throws [FirebaseException] or [TimeoutException] when the messages
+  /// can't be read, and [FormatException] when the document is malformed.
+  Future<Map<String, String>> fetch(String languageCode);
 }
 
-/// Flattens a Tolgee JSON export into `key -> message`.
-///
-/// Handles both flat exports and nested ones (when the Tolgee "structure
-/// delimiter" is on), joining nested keys with `.`. Non-string leaves are
-/// skipped so a bad value only drops that key, not the whole bundle.
-Map<String, String> parseTolgeeJson(Object? body) {
-  final decoded = body is String ? jsonDecode(body) : body;
-  if (decoded is! Map<String, dynamic>) {
-    throw const FormatException('Tolgee export is not a JSON object');
-  }
-  final messages = <String, String>{};
+/// Reads `translations_published/{lang}` once per call. App users don't keep
+/// a listener open: every change would cost one read per connected client.
+class FirestoreOtaDataSource implements OtaRemoteDataSource {
+  const FirestoreOtaDataSource(this._firestore);
 
-  void visit(String prefix, Map<String, dynamic> node) {
-    for (final MapEntry(:key, :value) in node.entries) {
-      final path = prefix.isEmpty ? key : '$prefix.$key';
-      if (value is String) {
-        messages[path] = value;
-      } else if (value is Map<String, dynamic>) {
-        visit(path, value);
-      }
-    }
-  }
+  final FirebaseFirestore _firestore;
 
-  visit('', decoded);
-  return messages;
+  static const Duration _timeout = Duration(seconds: 10);
+
+  @override
+  Future<Map<String, String>> fetch(String languageCode) async {
+    final snapshot = await _firestore
+        .collection(TranslationsFirestore.published)
+        .doc(languageCode)
+        .get()
+        .timeout(_timeout);
+    return parseMessages(snapshot.data());
+  }
 }
