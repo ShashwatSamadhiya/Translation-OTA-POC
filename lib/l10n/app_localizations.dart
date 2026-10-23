@@ -177,7 +177,7 @@ abstract class AppLocalizations {
   /// App bar title of the POC screen
   ///
   /// In en, this message translates to:
-  /// **'Tolgee OTA POC'**
+  /// **'Firebase OTA POC'**
   String get pocTitle;
 
   /// Label of the language picker
@@ -198,25 +198,25 @@ abstract class AppLocalizations {
   /// **'Source: device cache'**
   String get pocSourceCache;
 
-  /// Shown when OTA translations were just fetched
+  /// Shown when OTA translations were just fetched from Firestore
   ///
   /// In en, this message translates to:
-  /// **'Source: Tolgee CDN'**
+  /// **'Source: Firestore'**
   String get pocSourceNetwork;
 
-  /// Button that re-fetches OTA translations
+  /// Button that re-fetches OTA translations from Firestore
   ///
   /// In en, this message translates to:
-  /// **'Fetch from CDN'**
+  /// **'Fetch from Firestore'**
   String get pocRefresh;
 
-  /// Shown when the CDN URL is missing from env
+  /// Shown when the Firebase options are missing from env
   ///
   /// In en, this message translates to:
-  /// **'TOLGEE_CDN_URL is not set, showing bundled strings only'**
-  String get pocCdnNotConfigured;
+  /// **'Firebase is not configured, showing bundled strings only'**
+  String get pocNotConfigured;
 
-  /// Shown when the CDN fetch fails
+  /// Shown when the Firestore fetch fails
   ///
   /// In en, this message translates to:
   /// **'Could not fetch translations: {reason}'**

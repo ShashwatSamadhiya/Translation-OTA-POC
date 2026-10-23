@@ -1,6 +1,7 @@
-# How the Tolgee OTA POC works
+# How the OTA translations POC works
 
-This POC updates translations from Tolgee Cloud without a new app release.
+This POC updates translations from Firestore without a new app release, and
+lets editors change them in context, inside the running app.
 Screens still call `AppLocalizations.of(context).retry`, just as aqua_setu does
 today. The bundled ARB files stay in the app as the offline fallback.
 
@@ -9,9 +10,9 @@ For setup and run steps, see the [README](../README.md).
 ## 1. Architecture
 
 ```
-Tolgee Cloud ─publish─► cdn.tolg.ee/<hash>/hi.json   (public file, no API key)
+Editors (edit mode) ─Publish─► Firestore translations_published/hi   (public read)
                                 │
-          OtaRemoteDataSource   │  downloads it with Dio
+          FirestoreOtaDataSource│  one get() per session, resume and language change
                                 ▼
           OtaTranslationRepository ──► caches it on the device (SharedPreferences)
                                 ▼
@@ -23,7 +24,7 @@ Tolgee Cloud ─publish─► cdn.tolg.ee/<hash>/hi.json   (public file, no API 
 
 | Piece | What it does |
 | --- | --- |
-| [`ota_remote_data_source.dart`](../lib/src/features/ota_translations/data/datasources/ota_remote_data_source.dart) | Downloads `<cdn>/<lang>.json` and flattens it into a `key → message` map. It reads the body as plain text because Tolgee serves `application/octet-stream`. It rejects anything that isn't a JSON object, such as the XML 404 page. |
+| [`ota_remote_data_source.dart`](../lib/src/features/ota_translations/data/datasources/ota_remote_data_source.dart) | Reads `translations_published/{lang}` once (no live listener, so app users cost one read per fetch) and returns its `messages` map. A missing document means no OTA strings yet. |
 | [`ota_local_data_source.dart`](../lib/src/features/ota_translations/data/datasources/ota_local_data_source.dart) | Stores the last good download per language, so OTA strings survive a restart and work offline. A corrupt entry is deleted. |
 | [`ota_translation_repository_impl.dart`](../lib/src/features/ota_translations/data/repositories/ota_translation_repository_impl.dart) | Maps errors to `Either<Failure, OtaTranslationBundle>`: not configured, network, or invalid payload. A failed cache write does not hide fresh strings. |
 | [`ota_translations_cubit.dart`](../lib/src/features/ota_translations/presentation/cubit/ota_translations_cubit.dart) | Emits the cached copy first, then downloads the latest. It ignores a refresh while one is in progress, and drops a late response for a language the user has already switched away from. |
@@ -134,7 +135,7 @@ Any syntax error, such as unbalanced braces or a missing `other`, throws a
    matching argument (for example a translator typed `{humidty}`), the
    formatter throws, returns `null`, and the bundled string is shown.
 
-This is the main safety net: a mistake made in Tolgee can never put broken
+This is the main safety net: a mistake that slips past the editor's checks can never put broken
 text on screen. At worst, that one key shows its bundled version.
 
 ### Limits
@@ -152,8 +153,20 @@ These match how `gen-l10n` behaves:
 | --- | --- |
 | First launch, offline | Bundled ARB strings |
 | Offline with a cached bundle | Cached OTA strings |
-| CDN returns 404 (e.g. a language isn't published) | Cached or bundled strings, and a refresh-failed message on the POC screen |
-| CDN returns non-JSON | Same as a 404 (`InvalidPayloadFailure`) |
-| One key missing, empty or malformed in Tolgee | Bundled string for that key, OTA strings for the rest |
-| Tolgee has keys this build doesn't know | Ignored |
+| Firestore unreachable or times out (10 s) | Cached or bundled strings, and a refresh-failed message on the POC screen |
+| A language was never published | Bundled strings for that language |
+| `messages` is not a map | Same as unreachable (`InvalidPayloadFailure`) |
+| One key missing, empty or malformed | Bundled string for that key, OTA strings for the rest |
+| Firestore has keys this build doesn't know | Ignored |
 | User switches language mid-download | The late response is dropped |
+
+## 5. In-context editing
+
+Editors change translations inside the running app, and publish them to
+`translations_published`, which this delivery flow reads. See:
+
+- [IN_CONTEXT_EDITING.md](IN_CONTEXT_EDITING.md): the whole editing flow.
+- [EDIT_OVERLAY.md](EDIT_OVERLAY.md): how a tap on screen is traced back to
+  its ARB key.
+- [FIREBASE.md](FIREBASE.md): the Firestore data model, auth and security
+  rules.

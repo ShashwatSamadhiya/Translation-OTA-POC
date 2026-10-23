@@ -1,0 +1,15 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "translations_draft",
+      "fieldPath": "messages",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "translations_published",
+      "fieldPath": "messages",
+      "indexes": []
+    }
+  ]
+}

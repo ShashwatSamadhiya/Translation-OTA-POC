@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tolgee_poc/l10n/app_localizations.dart';
+import 'package:tolgee_poc/src/core/l10n/l10n_key_tag.dart';
 import 'package:tolgee_poc/src/features/ota_translations/domain/entities/ota_translation_bundle.dart';
 import 'package:tolgee_poc/src/features/ota_translations/presentation/l10n/ota_localizations_delegate.dart';
 
@@ -70,5 +71,37 @@ void main() {
       OtaLocalizationsDelegate(bundle({'retry': 'B'})).shouldReload(a),
       isTrue,
     );
+  });
+
+  group('edit mode', () {
+    Future<AppLocalizations> loadTagged(OtaTranslationBundle? b) =>
+        OtaLocalizationsDelegate(b, tagKeys: true).load(hindi);
+
+    test('tags OTA strings with their key', () async {
+      final l10n = await loadTagged(bundle({'retry': 'फिर से'}));
+      expect(L10nKeyTag.keysIn(l10n.retry), ['retry']);
+      expect(L10nKeyTag.strip(l10n.retry), 'फिर से');
+    });
+
+    test('tags bundled strings even without a bundle', () async {
+      final l10n = await loadTagged(null);
+      expect(L10nKeyTag.keysIn(l10n.pondCount(2)), ['pondCount']);
+      expect(L10nKeyTag.strip(l10n.pondCount(2)), bundled.pondCount(2));
+    });
+
+    test('does not tag outside edit mode', () async {
+      final l10n = await load(bundle({'retry': 'फिर से'}));
+      expect(l10n.retry, 'फिर से');
+    });
+
+    test('reloads when tagging is switched', () {
+      expect(
+        const OtaLocalizationsDelegate(
+          null,
+          tagKeys: true,
+        ).shouldReload(const OtaLocalizationsDelegate(null)),
+        isTrue,
+      );
+    });
   });
 }

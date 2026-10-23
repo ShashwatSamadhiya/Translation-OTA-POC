@@ -4,6 +4,7 @@
 
 import '../../../../../l10n/app_localizations.dart';
 import '../../../../core/l10n/icu_message_formatter.dart';
+import '../../../../core/l10n/l10n_key_tag.dart';
 
 /// [AppLocalizations] that prefers strings delivered over the air and
 /// falls back to the bundled ARB string per key when the OTA string
@@ -12,11 +13,18 @@ class OtaAppLocalizations extends AppLocalizations {
   OtaAppLocalizations({
     required AppLocalizations bundled,
     required this._messages,
+    this._tagKeys = false,
   }) : _bundled = bundled,
        super(bundled.localeName);
 
   final AppLocalizations _bundled;
   final Map<String, String> _messages;
+
+  /// In-context edit mode: every string carries an invisible key tag.
+  final bool _tagKeys;
+
+  String _tag(String key, String value) =>
+      _tagKeys ? L10nKeyTag.tag(key, value) : value;
 
   String _resolve(
     String key,
@@ -24,13 +32,12 @@ class OtaAppLocalizations extends AppLocalizations {
     Map<String, Object> args = const {},
   ]) {
     final message = _messages[key];
-    if (message == null || message.isEmpty) return fallback();
-    return IcuMessageFormatter.format(
-          message,
-          locale: localeName,
-          args: args,
-        ) ??
-        fallback();
+    if (message == null || message.isEmpty) return _tag(key, fallback());
+    return _tag(
+      key,
+      IcuMessageFormatter.format(message, locale: localeName, args: args) ??
+          fallback(),
+    );
   }
 
   @override
@@ -116,8 +123,8 @@ class OtaAppLocalizations extends AppLocalizations {
   String get pocRefresh => _resolve('pocRefresh', () => _bundled.pocRefresh);
 
   @override
-  String get pocCdnNotConfigured =>
-      _resolve('pocCdnNotConfigured', () => _bundled.pocCdnNotConfigured);
+  String get pocNotConfigured =>
+      _resolve('pocNotConfigured', () => _bundled.pocNotConfigured);
 
   @override
   String pocRefreshFailed(String reason) => _resolve(

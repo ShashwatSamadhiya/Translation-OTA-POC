@@ -6,7 +6,8 @@ This page covers two things:
 2. How `OtaLocalizationsDelegate` hooks into it, and how
    `tool/gen_ota_localizations.dart` generates `OtaAppLocalizations`.
 
-The CDN, cache and cubit, and the ICU formatter, are covered in
+Firestore delivery, the cache and cubit, the ICU formatter and in-context
+editing are covered in
 [HOW_IT_WORKS.md](HOW_IT_WORKS.md).
 
 ---
@@ -118,14 +119,14 @@ localizationsDelegates: [
 | --- | --- | --- |
 | `type` | `AppLocalizations`, from `extends LocalizationsDelegate<AppLocalizations>` | Every `AppLocalizations.of(context)` now gets our object, so no screen changes. |
 | `isSupported` | Passes the question to `AppLocalizations.delegate` | The supported languages always match the ARB files. |
-| `load` | Returns `OtaAppLocalizations` if the bundle matches the locale's language, otherwise the plain bundled class. Always a `SynchronousFuture`. | No blank first frame. An English bundle is never applied to Hindi while the user is switching language. |
-| `shouldReload` | `old.bundle != bundle`, a deep comparison through `Equatable` | Identical strings don't trigger a rebuild. Any change does. |
+| `load` | Returns `OtaAppLocalizations` if the bundle matches the locale's language (or always, when `tagKeys` is on in edit mode), otherwise the plain bundled class. Always a `SynchronousFuture`. | No blank first frame. An English bundle is never applied to Hindi while the user is switching language. |
+| `shouldReload` | `old.bundle != bundle` (a deep comparison through `Equatable`) or `tagKeys` changed | Identical strings don't trigger a rebuild. Any change does. |
 
-### 2.2 What happens when Tolgee publishes a fix
+### 2.2 What happens when an editor publishes a fix
 
 ```
 1. App resumes or the user taps Fetch → OtaTranslationsCubit.refresh()
-2. Repository downloads hi.json → new OtaTranslationBundle
+2. Repository reads translations_published/hi → new OtaTranslationBundle
 3. Cubit emits a state with the new bundle
 4. BlocBuilder in app.dart (buildWhen: locale or bundle changed)
    rebuilds MaterialApp with OtaLocalizationsDelegate(newBundle)
@@ -145,7 +146,7 @@ bundled subclass for the current language and overrides every member:
 ```dart
 @override
 String farmerRegistered(String name) => _resolve(
-  'farmerRegistered',                    // key to look up in the CDN map
+  'farmerRegistered',                    // key to look up in the OTA map
   () => _bundled.farmerRegistered(name), // per-key fallback
   {'name': name},                        // ICU arguments
 );
@@ -180,8 +181,9 @@ l10n.yaml ──► _L10nConfig.read ──► paths + class name
 lib/l10n/app_localizations.dart ──► _parseMembers ──► [ _Member(name, parameters) ]
                                      │
 lib/l10n/app_en.arb ──────────────► _formattedPlaceholders ──► keys that must stay bundled
+lib/l10n/app_*.arb ───────────────► _readBundledMessages ──► raw messages per language
                                      │
-                         _render ──► Dart source
+             _render, _renderCatalog ──► Dart source (two files)
                                      │
                          _format ──► dart format (project language version)
                                      │
@@ -230,14 +232,28 @@ different. Those keys are marked **bundled only**.
 
 ### Step 4: Write the class (`_render`)
 
-The output is the header, the constructor, `_resolve`, and then one override
-per member:
+The output is the header, the constructor, `_tag`, `_resolve`, and then one
+override per member:
 
 | Member | Generated code |
 | --- | --- |
 | Getter | `String get retry => _resolve('retry', () => _bundled.retry);` |
 | Method | `String x(String a, int b) => _resolve('x', () => _bundled.x(a, b), {'a': a, 'b': b});` |
-| Bundled only | `// Bundled only: <reason>.` then `String x(DateTime d) => _bundled.x(d);` |
+| Bundled only | `// Bundled only: <reason>.` then `String x(DateTime d) => _tag('x', _bundled.x(d));` |
+
+`_tag(key, value)` returns `value` unchanged unless the class was built with
+`tagKeys: true` (in-context edit mode). Then it appends the key's invisible
+tag. `_resolve` tags both the OTA string and the bundled fallback, so every
+string on screen can be picked.
+
+### Step 4b: Write the key catalog (`_renderCatalog`)
+
+`lib/src/core/l10n/l10n_key_catalog.dart` holds one `L10nKeyInfo` per member,
+in the same order: the name, the description, the placeholders (name, type
+and `example` from the template ARB), the raw message from every `app_*.arb`,
+and whether the key is OTA-enabled. The edit-mode tag stores a key's index
+in this list. The editor uses the catalog for placeholder checks, previews,
+**Use bundled** and **Import bundled ARB**.
 
 Import paths are computed relative to the output file (`_relativeImport`),
 following the project's relative-imports rule.
@@ -252,10 +268,10 @@ after every format run.
 
 ### Step 6: Write or check
 
-- **Default**: writes the file, then prints the key count and any
+- **Default**: writes both files, then prints the key count and any
   bundled-only keys with the reason.
-- **`--check`**: writes nothing. It exits with code 1 if the file is missing
-  or different, so CI catches an ARB change that wasn't regenerated.
+- **`--check`**: writes nothing. It exits with code 1 if either file is
+  missing or different, so CI catches an ARB change that wasn't regenerated.
 
 ### Errors
 
@@ -274,7 +290,7 @@ after every format run.
 2. **Forgot in CI:** `--check` fails.
 3. **Key typo:** impossible, because key strings are generated from the
    member names.
-4. **Broken string in Tolgee:** the formatter returns `null`, and the
+4. **Broken string in Firestore:** the formatter returns `null`, and the
    bundled text is shown for that key.
 
 ---
@@ -285,5 +301,5 @@ after every format run.
    if needed, plus `app_hi.arb`, `app_mr.arb` and `app_te.arb`.
 2. Run `fvm flutter gen-l10n && fvm dart run tool/gen_ota_localizations.dart`.
 3. Use it in code: `AppLocalizations.of(context).newKey`.
-4. Push the new key to Tolgee (import the ARB files) so translators can
-   update it over the air later.
+4. Ship the build. Editors can then change the key over the air from edit
+   mode. **Import bundled ARB** in the key table seeds it in Firestore.

@@ -1,5 +1,7 @@
+import 'dart:async';
+
 import 'package:dartz/dartz.dart';
-import 'package:dio/dio.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import '../../../../core/error/failure.dart';
 import '../../domain/entities/ota_translation_bundle.dart';
@@ -14,7 +16,7 @@ class OtaTranslationRepositoryImpl implements OtaTranslationRepository {
     this._now = DateTime.now,
   });
 
-  /// Null when no CDN URL is configured; the app then runs on bundled ARBs.
+  /// Null when Firebase is not configured; the app then runs on bundled ARBs.
   final OtaRemoteDataSource? _remote;
   final OtaLocalDataSource _local;
   final DateTime Function() _now;
@@ -35,13 +37,15 @@ class OtaTranslationRepositoryImpl implements OtaTranslationRepository {
   ) async {
     final remote = _remote;
     if (remote == null) {
-      return const Left(NotConfiguredFailure('TOLGEE_CDN_URL is not set'));
+      return const Left(NotConfiguredFailure('Firebase options are not set'));
     }
     final Map<String, String> messages;
     try {
       messages = await remote.fetch(languageCode);
-    } on DioException catch (e) {
-      return Left(NetworkFailure(e.message ?? e.type.name));
+    } on FirebaseException catch (e) {
+      return Left(NetworkFailure(e.message ?? e.code));
+    } on TimeoutException {
+      return const Left(NetworkFailure('Firestore did not answer in time'));
     } on FormatException catch (e) {
       return Left(InvalidPayloadFailure(e.message));
     }

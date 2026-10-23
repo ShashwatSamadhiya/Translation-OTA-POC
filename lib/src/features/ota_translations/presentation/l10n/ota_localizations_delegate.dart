@@ -8,9 +8,13 @@ import 'ota_app_localizations.dart';
 /// Replaces `AppLocalizations.delegate`, so `AppLocalizations.of(context)`
 /// keeps working everywhere and transparently returns OTA strings.
 class OtaLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
-  const OtaLocalizationsDelegate(this.bundle);
+  const OtaLocalizationsDelegate(this.bundle, {this.tagKeys = false});
 
   final OtaTranslationBundle? bundle;
+
+  /// In-context edit mode: every string, bundled ones included, carries an
+  /// invisible key tag so it can be picked on screen.
+  final bool tagKeys;
 
   @override
   bool isSupported(Locale locale) =>
@@ -22,15 +26,21 @@ class OtaLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
   Future<AppLocalizations> load(Locale locale) {
     final bundled = lookupAppLocalizations(locale);
     final current = bundle;
-    if (current == null || current.languageCode != locale.languageCode) {
-      return SynchronousFuture(bundled);
-    }
+    final messages = current?.languageCode == locale.languageCode
+        ? current!.messages
+        : null;
+    if (messages == null && !tagKeys) return SynchronousFuture(bundled);
     return SynchronousFuture(
-      OtaAppLocalizations(bundled: bundled, messages: current.messages),
+      OtaAppLocalizations(
+        bundled: bundled,
+        messages: messages ?? const {},
+        tagKeys: tagKeys,
+      ),
     );
   }
 
   /// A new bundle rebuilds every widget that reads [AppLocalizations].
   @override
-  bool shouldReload(OtaLocalizationsDelegate old) => old.bundle != bundle;
+  bool shouldReload(OtaLocalizationsDelegate old) =>
+      old.bundle != bundle || old.tagKeys != tagKeys;
 }

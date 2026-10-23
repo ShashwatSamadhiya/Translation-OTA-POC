@@ -12,13 +12,13 @@
   "typeToSearchVillage": "खोजने के लिए कम से कम {count} अक्षर लिखें",
   "launchpadComingSoon": "{title} जल्द आ रहा है",
   "pondCount": "{count, plural, =0{अभी कोई तालाब नहीं} =1{1 तालाब} other{{count} तालाब}}",
-  "pocTitle": "Tolgee OTA POC",
+  "pocTitle": "Firebase OTA POC",
   "pocLanguage": "भाषा",
   "pocSourceBundled": "स्रोत: ऐप में शामिल ARB",
   "pocSourceCache": "स्रोत: डिवाइस कैश",
-  "pocSourceNetwork": "स्रोत: Tolgee CDN",
-  "pocRefresh": "CDN से लाएं",
-  "pocCdnNotConfigured": "TOLGEE_CDN_URL सेट नहीं है, केवल ऐप में शामिल टेक्स्ट दिखाया जा रहा है",
+  "pocSourceNetwork": "स्रोत: Firestore",
+  "pocRefresh": "Firestore से लाएं",
+  "pocNotConfigured": "Firebase कॉन्फ़िगर नहीं है, केवल ऐप में शामिल टेक्स्ट दिखाया जा रहा है",
   "pocRefreshFailed": "अनुवाद नहीं लाए जा सके: {reason}",
   "pocOverriddenKeys": "OTA से {count} कुंजियाँ"
 }

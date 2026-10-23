@@ -9,17 +9,17 @@ sealed class Failure extends Equatable {
   List<Object?> get props => [message];
 }
 
-/// The Tolgee CDN URL was not provided via `--dart-define-from-file`.
+/// Firebase options were not provided via `--dart-define-from-file`.
 final class NotConfiguredFailure extends Failure {
   const NotConfiguredFailure(super.message);
 }
 
-/// The CDN could not be reached or answered with a non-2xx status.
+/// Firestore could not be reached or refused the read.
 final class NetworkFailure extends Failure {
   const NetworkFailure(super.message);
 }
 
-/// The CDN answered, but the body is not a Tolgee JSON export.
+/// Firestore answered, but the document is not a translations document.
 final class InvalidPayloadFailure extends Failure {
   const InvalidPayloadFailure(super.message);
 }
