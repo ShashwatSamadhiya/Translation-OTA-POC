@@ -4,6 +4,13 @@ Editors change translations **inside the running app**: they tap a string on
 screen, edit it, and see the result straight away. App users only see the
 change after an editor publishes it.
 
+The editor is the local package
+[`../l10n_in_context`](../../l10n_in_context/README.md). It
+knows nothing about Firebase: the app implements its two data-source
+interfaces in
+[`lib/src/features/l10n_editor/data/`](../lib/src/features/l10n_editor/data/),
+and wires it up in [`app.dart`](../lib/src/app.dart).
+
 Related docs:
 
 - [EDIT_OVERLAY.md](EDIT_OVERLAY.md): how the overlay finds the string under
@@ -32,7 +39,7 @@ Related docs:
 | Who | Sees | How it gets text |
 | --- | --- | --- |
 | **App user** | Published text, else bundled ARB text | Reads `translations_published/{lang}` at start-up, on return to the app and on language change |
-| **Signed-in editor** | Drafts layered over published text | Live listeners on every draft and published document |
+| **Signed-in editor** | Drafts layered over published text, over the app's OTA bundle | Live listeners on every draft and published document |
 
 Editing never touches what app users see until someone presses
 **Publish**.
@@ -52,8 +59,33 @@ Edit mode exists only in builds whose env file contains:
 final editMode = Env.l10nEditMode && firestore != null;
 ```
 
-When it's on, `main.dart` also provides an `L10nEditorCubit`, and
-[`app.dart`](../lib/src/app.dart) wraps the app in `L10nEditOverlay`.
+When it's on, `main.dart` creates the two data sources,
+`FirebaseL10nAccessDataSource` and `FirestoreL10nTranslationDataSource`, and
+passes them to `OtaPocApp`. [`app.dart`](../lib/src/app.dart) then wraps
+`MaterialApp` in the package's `InContextEditor`:
+
+```dart
+InContextEditor(
+  delegate: delegate,                 // AppLocalizationsOverrideDelegate with the OTA bundle
+  accessDataSource: access,           // FirebaseL10nAccessDataSource
+  translationDataSource: translations, // FirestoreL10nTranslationDataSource
+  label: Env.firebaseProjectId,
+  onRequestAccess: (context) => showEmailPasswordSignInDialog(
+    context,
+    signIn: access.signIn,
+    subtitle: 'Firebase project: ${Env.firebaseProjectId}',
+  ),
+  onSignOut: access.signOut,
+  builder: (context, l10n) => MaterialApp(
+    localizationsDelegates: [l10n.delegate, ...],
+    builder: l10n.overlay,
+    ...
+  ),
+)
+```
+
+`InContextEditor` provides the editor's blocs, swaps in the editor's
+delegate and installs `L10nEditOverlay` through `l10n.overlay`.
 `Env.l10nEditMode` is a compile-time constant, so a build without the flag
 contains none of the editor code.
 
@@ -61,15 +93,25 @@ contains none of the editor code.
 
 ### 3.1 Sign-in
 
-1. On start-up, `L10nEditorCubit.start()` asks Firebase Auth whether someone
-   is still signed in from a previous session.
-2. Otherwise the overlay shows a round **edit button**. It opens the
-   [sign-in dialog](../lib/src/features/l10n_editor/presentation/widgets/sign_in_dialog.dart)
-   (email and password).
-3. After Firebase Auth accepts the password, the cubit checks that the
+The package never signs anyone in. Its `EditorSessionBloc` only listens to
+`L10nAccessDataSource.watchEditor()` and is `checking`, `noAccess` or
+`editor`. The app's
+[`FirebaseL10nAccessDataSource`](../lib/src/features/l10n_editor/data/firebase_l10n_access_data_source.dart)
+implements it as Firebase Auth's `authStateChanges()`, filtered by the
+`editors/{uid}` document:
+
+1. On start-up, `authStateChanges()` reports whoever is still signed in from
+   a previous session (on Web that arrives asynchronously, so the edit
+   button stays disabled while `checking`).
+2. Otherwise the overlay shows a round **edit button**. It calls
+   `onRequestAccess`, which in this app opens the package's
+   `showEmailPasswordSignInDialog` with `FirebaseL10nAccessDataSource.signIn`.
+3. After Firebase Auth accepts the password, `signIn` checks that the
    document `editors/{uid}` exists. If it doesn't, the user is signed out
-   again with "*email* is not an editor."
-4. Once confirmed, the edit button turns into the editor toolbar.
+   again and the dialog shows "*email* is not an editor."
+4. Once confirmed, `watchEditor()` emits an
+   `EditorUser(id: uid, displayName: email)`, and the edit button turns into
+   the editor toolbar.
 
 The `editors` list is the permission system. A valid password alone is not
 enough, and [`firestore.rules`](../firestore.rules) enforces the same check
@@ -77,43 +119,49 @@ on the server.
 
 ### 3.2 Drafts appear live
 
-After sign-in, the cubit subscribes to two collections:
+When `EditorSessionBloc` reports an editor, `InContextEditor` tells the
+package's `TranslationsBloc` to subscribe to two collections through
+[`FirestoreL10nTranslationDataSource`](../lib/src/features/l10n_editor/data/firestore_l10n_translation_data_source.dart):
 
 ```dart
-_dataSource.watchDrafts()     // translations_draft/*
-_dataSource.watchPublished()  // translations_published/*
+watchDrafts()     // translations_draft/*
+watchPublished()  // translations_published/*
 ```
 
-[`app.dart`](../lib/src/app.dart) then builds the app with the editor's
-view instead of the published bundle:
+`InContextEditor` then hands the app a copy of its delegate with the
+editor's view on top of the app's own OTA messages:
 
 ```dart
-bundle: editor.isEditor
-    ? OtaTranslationBundle(messages: editor.effectiveDraft(lang), ...)
-    : state.bundle,
-tagKeys: editor.isEditor,
+delegate.copyWith(
+  messages: {lang: {...?base[lang], ...snapshot.effectiveDraft(lang)}},
+  tagKeys: true,
+)
 ```
 
 `effectiveDraft(lang)` is `{...published[lang], ...drafts[lang]}`. A key
 nobody has edited shows its published text, and an edited key shows the
-draft. When any editor saves, Firestore pushes the new draft to every
+draft. Until the editor's data arrives, the app's OTA bundle (`base`) is
+still shown. When any editor saves, Firestore pushes the new draft to every
 signed-in editor and their screens re-render.
 
 ### 3.3 Every string gets an invisible tag
 
-With `tagKeys: true`, the generated
-[`OtaAppLocalizations`](../lib/src/features/ota_translations/presentation/l10n/ota_app_localizations.dart)
-sends every string through `_tag`:
+With `tagKeys: true`, every getter of the generated
+[`AppLocalizationsOverride`](../lib/l10n/app_localizations_override.dart)
+goes through the package's
+[`L10nMessageResolver`](../../l10n_in_context/lib/src/presentation/l10n/l10n_message_resolver.dart),
+which tags the result with the key's catalog index:
 
 ```dart
-String _tag(String key, String value) =>
-    _tagKeys ? L10nKeyTag.tag(key, value) : value;
+String _tag(int index, String value) =>
+    tagKeys ? value + KeyTagCodec.encode(index) : value;
 ```
 
-[`L10nKeyTag`](../lib/src/core/l10n/l10n_key_tag.dart) appends:
+[`KeyTagCodec`](../../l10n_in_context/lib/src/core/l10n/l10n_key_tag.dart)
+(package-internal; the only public API is `L10nKeyTag.strip`) appends:
 
 ```
-U+2063 (start marker)  +  the key's index in l10nKeyCatalog, in binary
+U+2063 (start marker)  +  the key's index in appLocalizationsCatalog, in binary
                           0 → U+200C (ZWNJ)   1 → U+200D (ZWJ)
 ```
 
@@ -124,8 +172,9 @@ traced back to its key.
 
 - Bundled strings are tagged too, so even keys with no OTA text can be
   picked.
-- Bundled-only keys (with date or number formats) are tagged but marked
-  read-only in the editor, because the app ignores OTA text for them.
+- Bundled-only keys (with date or number formats, `overridable: false`) are
+  tagged through `bundledOnly` but marked read-only in the editor, because
+  the app ignores OTA text for them.
 - App users never get tags.
 
 ### 3.4 Picking a string
@@ -140,16 +189,16 @@ spotting text that does *not* come from the ARB files.
 
 ### 3.5 The edit dialog
 
-[`edit_key_dialog.dart`](../lib/src/features/l10n_editor/presentation/widgets/edit_key_dialog.dart)
+[`edit_key_dialog.dart`](../../l10n_in_context/lib/src/presentation/widgets/edit_key_dialog.dart)
 shows, for the chosen key:
 
 | Part | Source |
 | --- | --- |
-| Key name, description, placeholders with examples | `l10nKeyCatalog` (generated from `app_en.arb`) |
-| One tab per language, starting with the language on screen | `AppLocalizations.supportedLocales` |
+| Key name, description, placeholders with examples | `appLocalizationsCatalog` (generated from `app_en.arb`) |
+| One tab per language, starting with the language on screen | `appLocalizationsCatalog.languages` |
 | Text field with the current draft | `effectiveDraft(lang)`, else the bundled text |
 | **Published** value with a **Use** button | `translations_published/{lang}` |
-| **Bundled** value with a **Use** button | raw ARB text from `l10nKeyCatalog` |
+| **Bundled** value with a **Use** button | raw ARB text from `appLocalizationsCatalog` |
 | Live preview | `IcuMessageFormatter` with the ARB example values; plurals shown for 0, 1, 2 and 5 |
 
 A dot after a language (`HI •`) means that tab has unsaved changes. **Save**
@@ -157,7 +206,8 @@ writes every changed language.
 
 ### 3.6 Checks before saving
 
-[`validate_message.dart`](../lib/src/features/l10n_editor/domain/validate_message.dart)
+The `ValidateMessage` use case
+([`validate_message.dart`](../../l10n_in_context/lib/src/domain/usecases/validate_message.dart))
 runs on every keystroke. **Save** stays disabled until every changed
 language passes:
 
@@ -175,7 +225,10 @@ confirms that every bundled ARB message passes.
 
 ### 3.7 Saving
 
-`L10nEditorCubit.saveDraft` validates again, then writes **one batch**:
+**Save** adds `DraftsSaveRequested` to `TranslationsBloc`. Its `SaveDraft`
+use case validates again, then calls
+`FirestoreL10nTranslationDataSource.saveDraft`, which writes **one batch**
+per language:
 
 1. A merge into `translations_draft/{lang}`, which changes only
    `messages.<key>`, `updatedAt` and `updatedBy`.
@@ -183,12 +236,13 @@ confirms that every bundled ARB message passes.
 
 Because it's a merge, two editors working on different keys never overwrite
 each other. If two editors save the *same* key in the same language, the
-last save wins, and the history keeps both values.
+last save wins, and the history keeps both values. Languages are saved one
+at a time, stopping at the first failure, which the dialog shows.
 
 ### 3.8 Key table, import and publish
 
 The table icon opens
-[`l10n_key_table_page.dart`](../lib/src/features/l10n_editor/presentation/pages/l10n_key_table_page.dart):
+[`l10n_key_table_page.dart`](../../l10n_in_context/lib/src/presentation/pages/l10n_key_table_page.dart):
 
 - **Every key in every language**, including keys that never appear on the
   current screen. Tap a row to open the same edit dialog.
@@ -197,35 +251,46 @@ The table icon opens
   - *No OTA text*: some language has neither draft nor published text.
   - *Changed from bundled*: the draft differs from the ARB.
   - *Not published*: the draft differs from what users see.
-- **Import bundled ARB:** copies the ARB text into the drafts for keys that
-  have no text yet. Use it once to seed an empty project.
+- **Import bundled ARB:** copies the ARB text into the drafts for
+  overridable keys that have no text yet (the `ImportBundled` use case). Use
+  it once to seed an empty project.
 - **Publish (n):** `n` is the number of unpublished key/language pairs (also
   the badge on the toolbar icon). Publishing:
   1. Shows a diff: old text crossed out, new text below.
-  2. On confirm, writes the full draft of each changed language to
-     `translations_published/{lang}`, plus a history entry, in one batch.
+  2. On confirm, the `PublishDrafts` use case writes the full draft of each
+     changed language to `translations_published/{lang}`, plus a history
+     entry, in one batch.
+
+Each finished save, import or publish is reported as a `TranslationsOutcome`
+on `TranslationsBloc`'s state, which the dialog, the key table and the
+overlay turn into messages.
 
 ### 3.9 App users get the change
 
 Nothing is pushed to app users. Their app reads `translations_published`
 again on the next launch, the next return to the app, a language change or
 a tap on **Fetch from Firestore**. The new text then replaces the cache, and
-`OtaLocalizationsDelegate` rebuilds the screens.
+[`app.dart`](../lib/src/app.dart) builds a new
+`AppLocalizationsOverrideDelegate` from it, which rebuilds the screens.
 
 ## 4. What the generator contributes
 
-[`tool/gen_ota_localizations.dart`](../tool/gen_ota_localizations.dart)
-writes two files that editing depends on:
+`fvm dart run l10n_in_context:generate`
+([`generator.dart`](../../l10n_in_context/lib/src/generator/generator.dart))
+writes one file,
+[`lib/l10n/app_localizations_override.dart`](../lib/l10n/app_localizations_override.dart).
+Editing depends on:
 
-| File | What editing uses from it |
+| Part | What editing uses from it |
 | --- | --- |
-| `ota_app_localizations.dart` | The `_tag` hook on every string |
-| `lib/src/core/l10n/l10n_key_catalog.dart` | Key order (the tag index), descriptions, placeholder names, types and examples, and the raw bundled text in all four languages |
+| `AppLocalizationsOverride` | Every getter calls `L10nMessageResolver.resolve(index, key, fallback, args)` (or `bundledOnly(index, fallback)`), which adds the tag |
+| `appLocalizationsCatalog` | An `L10nCatalog`: the languages, and per key its order (the tag index), description, placeholder names, types and examples, the raw bundled text in all four languages, and `overridable` |
+| `AppLocalizationsOverrideDelegate` | Carries the catalog and the messages to `InContextEditor` |
 
 After changing any ARB file, run:
 
 ```sh
-fvm flutter gen-l10n && fvm dart run tool/gen_ota_localizations.dart
+fvm flutter gen-l10n && fvm dart run l10n_in_context:generate
 ```
 
 A tag stores an index into the catalog, so it's only meaningful within one
@@ -234,29 +299,41 @@ app.
 
 ## 5. Code map
 
+The package follows clean architecture: data sources → repositories (which
+return `Either` via `fpdart`) → use cases → blocs. Package paths are under
+`../l10n_in_context/lib/src/`.
+
 | Layer | File | Role |
 | --- | --- | --- |
-| Config | [`env.dart`](../lib/src/core/config/env.dart) | `L10N_EDIT_MODE` and the Firebase options |
-| Core | [`l10n_key_tag.dart`](../lib/src/core/l10n/l10n_key_tag.dart) | Encode, decode and strip tags |
-| Core | [`l10n_key_info.dart`](../lib/src/core/l10n/l10n_key_info.dart) | `L10nKeyInfo`, `L10nPlaceholder` |
-| Core | [`l10n_key_catalog.dart`](../lib/src/core/l10n/l10n_key_catalog.dart) | Generated list of every key |
-| Data | [`l10n_editor_data_source.dart`](../lib/src/features/l10n_editor/data/l10n_editor_data_source.dart) | Auth plus Firestore reads and writes |
-| Domain | [`validate_message.dart`](../lib/src/features/l10n_editor/domain/validate_message.dart) | Checks before saving |
-| State | [`l10n_editor_cubit.dart`](../lib/src/features/l10n_editor/presentation/cubit/l10n_editor_cubit.dart), [`l10n_editor_state.dart`](../lib/src/features/l10n_editor/presentation/cubit/l10n_editor_state.dart) | Sign-in, live drafts, save, import, publish |
-| UI | [`l10n_edit_overlay.dart`](../lib/src/features/l10n_editor/presentation/widgets/l10n_edit_overlay.dart) | Edit button, toolbar, pick mode, highlight |
-| UI | [`tagged_text_finder.dart`](../lib/src/features/l10n_editor/presentation/widgets/tagged_text_finder.dart) | Finding tagged text in the render tree |
-| UI | [`sign_in_dialog.dart`](../lib/src/features/l10n_editor/presentation/widgets/sign_in_dialog.dart), [`edit_key_dialog.dart`](../lib/src/features/l10n_editor/presentation/widgets/edit_key_dialog.dart), [`l10n_key_table_page.dart`](../lib/src/features/l10n_editor/presentation/pages/l10n_key_table_page.dart) | Dialogs and the key table |
-| Wiring | [`app.dart`](../lib/src/app.dart), [`main.dart`](../lib/main.dart) | Switch between drafts and published text, and tagging on or off |
+| Config (app) | [`env.dart`](../lib/src/core/config/env.dart) | `L10N_EDIT_MODE` and the Firebase options |
+| Data (app) | [`firebase_l10n_access_data_source.dart`](../lib/src/features/l10n_editor/data/firebase_l10n_access_data_source.dart) | `L10nAccessDataSource`: `watchEditor()` from Firebase Auth and `editors/{uid}`, plus `signIn`/`signOut` for the UI |
+| Data (app) | [`firestore_l10n_translation_data_source.dart`](../lib/src/features/l10n_editor/data/firestore_l10n_translation_data_source.dart) | `L10nTranslationDataSource`: Firestore reads and writes, with history entries |
+| Generated (app) | [`app_localizations_override.dart`](../lib/l10n/app_localizations_override.dart) | `appLocalizationsCatalog`, `AppLocalizationsOverride`, `AppLocalizationsOverrideDelegate` |
+| Core | [`l10n_key_tag.dart`](../../l10n_in_context/lib/src/core/l10n/l10n_key_tag.dart) | `KeyTagCodec` (internal encode/decode), `L10nKeyTag.strip` |
+| Core | [`icu_message_formatter.dart`](../../l10n_in_context/lib/src/core/l10n/icu_message_formatter.dart) | Runtime ICU formatting |
+| Data | [`l10n_access_data_source.dart`](../../l10n_in_context/lib/src/data/datasources/l10n_access_data_source.dart), [`l10n_translation_data_source.dart`](../../l10n_in_context/lib/src/data/datasources/l10n_translation_data_source.dart) | The interfaces the app implements |
+| Data | [`repositories/`](../../l10n_in_context/lib/src/data/repositories/) | Turn data-source exceptions into `L10nFailure`s |
+| Domain | [`l10n_catalog.dart`](../../l10n_in_context/lib/src/domain/entities/l10n_catalog.dart), [`editor_user.dart`](../../l10n_in_context/lib/src/domain/entities/editor_user.dart), [`translation_snapshot.dart`](../../l10n_in_context/lib/src/domain/entities/translation_snapshot.dart) | `L10nCatalog`, `L10nKeyInfo`, `L10nPlaceholder`, `EditorUser`, drafts and published |
+| Domain | [`usecases/`](../../l10n_in_context/lib/src/domain/usecases/) | `ValidateMessage`, `SaveDraft`, `ImportBundled`, `PublishDrafts`, `WatchEditorAccess`, `WatchDrafts`, `WatchPublished` |
+| State | [`bloc/`](../../l10n_in_context/lib/src/presentation/bloc/) | `EditorSessionBloc` (who may edit), `TranslationsBloc` (live drafts, save, import, publish), `EditorToolsCubit` (pick mode, highlight) |
+| L10n | [`l10n_message_resolver.dart`](../../l10n_in_context/lib/src/presentation/l10n/l10n_message_resolver.dart), [`l10n_override_delegate.dart`](../../l10n_in_context/lib/src/presentation/l10n/l10n_override_delegate.dart) | Override-or-fallback per key, tagging, the delegate base class |
+| UI | [`in_context_editor.dart`](../../l10n_in_context/lib/src/presentation/widgets/in_context_editor.dart) | Provides the blocs, layers drafts over the app's messages |
+| UI | [`l10n_edit_overlay.dart`](../../l10n_in_context/lib/src/presentation/widgets/l10n_edit_overlay.dart) | Edit button, toolbar, pick mode, highlight |
+| UI | [`tagged_text_finder.dart`](../../l10n_in_context/lib/src/presentation/widgets/tagged_text_finder.dart) | Finding tagged text in the render tree |
+| UI | [`email_password_sign_in_dialog.dart`](../../l10n_in_context/lib/src/presentation/widgets/email_password_sign_in_dialog.dart), [`edit_key_dialog.dart`](../../l10n_in_context/lib/src/presentation/widgets/edit_key_dialog.dart), [`l10n_key_table_page.dart`](../../l10n_in_context/lib/src/presentation/pages/l10n_key_table_page.dart) | Dialogs and the key table |
+| Wiring (app) | [`app.dart`](../lib/src/app.dart), [`main.dart`](../lib/main.dart) | Create the data sources, build the delegate from the OTA bundle, wrap `MaterialApp` in `InContextEditor` |
 
 ## 6. Tests
 
 | Test | Covers |
 | --- | --- |
-| `test/core/l10n/l10n_key_tag_test.dart` | Encoding round-trips, several tags in one text, stripping |
-| `test/features/ota_translations/ota_app_localizations_test.dart` | Tags on OTA and bundled strings, none outside edit mode |
-| `test/features/l10n_editor/validate_message_test.dart` | Every rule in §3.6, and every bundled message passes |
-| `test/features/l10n_editor/l10n_editor_cubit_test.dart` | Session restore, the editor check, save, import, publish, error handling, sign-out (with a fake data source) |
-| `test/features/l10n_editor/tagged_text_finder_test.dart` | Picking inside buttons, the `IgnorePointer` fallback, skipping hidden routes |
+| `../l10n_in_context/test/core/l10n_key_tag_test.dart` | Encoding round-trips, several tags in one text, stripping |
+| `../l10n_in_context/test/presentation/l10n_override_delegate_test.dart` | Override or fallback per key, tags on override and bundled strings, none outside edit mode |
+| `../l10n_in_context/test/domain/validate_message_test.dart` | Every rule in §3.6 |
+| `../l10n_in_context/test/presentation/editor_session_bloc_test.dart`, `translations_bloc_test.dart` | The editor check, live drafts, save, import, publish, error handling, unsubscribing (with in-memory data sources) |
+| `../l10n_in_context/test/presentation/in_context_editor_test.dart` | No access, no Edit button without `onRequestAccess`, an editor picking and editing a text |
+| `../l10n_in_context/test/presentation/tagged_text_finder_test.dart` | Picking inside buttons, the `IgnorePointer` fallback, skipping hidden routes |
+| `test/l10n/app_localizations_override_test.dart` | The app's generated file: OTA strings with fallback, tags in edit mode, the catalog, and every bundled message passing validation |
 
 ## 7. Known limits
 

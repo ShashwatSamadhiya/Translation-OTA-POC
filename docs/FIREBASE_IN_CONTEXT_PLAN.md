@@ -5,6 +5,16 @@ published strings in the same project, no promote script). See the
 [README](../README.md#in-context-editing). The multi-project parts below
 (§1, §3 prod rules, §7 promotion) are still a proposal.
 
+The implemented editor (§5, §6) now lives in the local package
+[`../l10n_in_context`](../../l10n_in_context/README.md), so some
+names differ from this plan: the generator is `dart run
+l10n_in_context:generate`, it writes one file
+(`lib/l10n/app_localizations_override.dart`) with the catalog
+`appLocalizationsCatalog`, `AppLocalizationsOverride` and
+`AppLocalizationsOverrideDelegate`, and the editor state is split into
+`EditorSessionBloc`, `TranslationsBloc` and `EditorToolsCubit`. See
+[IN_CONTEXT_EDITING.md](IN_CONTEXT_EDITING.md) for what was built.
+
 This plan replaces Tolgee with Firebase for storing and delivering
 translations, and adds an edit mode in the app for in-context editing.
 
@@ -22,7 +32,7 @@ translations, and adds an edit mode in the app for in-context editing.
 
 | Piece | Status |
 | --- | --- |
-| `OtaAppLocalizations`, `OtaLocalizationsDelegate`, `IcuMessageFormatter`, the generator | Kept. The generator gets two small additions (§6). |
+| `OtaAppLocalizations`, `OtaLocalizationsDelegate`, `IcuMessageFormatter`, the generator | Kept. The generator gets two small additions (§6). (Since moved into the `l10n_in_context` package as `AppLocalizationsOverride`, `AppLocalizationsOverrideDelegate`, `IcuMessageFormatter` and `l10n_in_context:generate`.) |
 | `OtaLocalDataSource` (SharedPreferences cache) | Kept: it gives the first frame cached strings before Firestore starts. |
 | `OtaTranslationsCubit`, repository | Changed: they read from Firestore and add a live stream for edit mode. |
 | `OtaRemoteDataSource` (Tolgee CDN), `mock_cdn/`, `tool/serve_mock_cdn.py`, `env/tolgee.json` | **Deleted** once the Firestore source works (no dead code). The Tolgee findings stay in the README. |

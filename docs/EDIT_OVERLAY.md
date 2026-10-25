@@ -1,10 +1,12 @@
 # How `L10nEditOverlay` works
 
-[`l10n_edit_overlay.dart`](../lib/src/features/l10n_editor/presentation/widgets/l10n_edit_overlay.dart)
+[`l10n_edit_overlay.dart`](../../l10n_in_context/lib/src/presentation/widgets/l10n_edit_overlay.dart)
 is the on-screen part of in-context editing: the edit button, the editor
 toolbar, pick mode and the highlight outlines. The render-tree searches it
 relies on are in
-[`tagged_text_finder.dart`](../lib/src/features/l10n_editor/presentation/widgets/tagged_text_finder.dart).
+[`tagged_text_finder.dart`](../../l10n_in_context/lib/src/presentation/widgets/tagged_text_finder.dart).
+Both live in the `l10n_in_context` package and are not exported; the app
+only reaches the overlay through `InContextEditor`.
 
 This page assumes you know that, in edit mode, every localized string ends
 with an invisible key tag. [IN_CONTEXT_EDITING.md §3.3](IN_CONTEXT_EDITING.md#33-every-string-gets-an-invisible-tag)
@@ -14,41 +16,45 @@ explains the tag.
 
 ## 1. Where it sits in the widget tree
 
-[`app.dart`](../lib/src/app.dart) installs it through `MaterialApp.builder`:
+[`app.dart`](../lib/src/app.dart) installs it through `MaterialApp.builder`,
+using the `overlay` that `InContextEditor` hands to its builder:
 
 ```dart
-MaterialApp(
-  navigatorKey: _navigatorKey,
-  builder: (context, child) => L10nEditOverlay(
-    navigatorKey: _navigatorKey,
-    child: child!,          // child is the Navigator
-  ),
+InContextEditor(
   ...
+  builder: (context, l10n) => MaterialApp(
+    localizationsDelegates: [l10n.delegate, ...],
+    builder: l10n.overlay,  // (context, child) => L10nEditOverlay(child: child)
+    ...
+  ),
 )
 ```
 
 ```
-MaterialApp
- └─ Theme, ScaffoldMessenger, Localizations, MediaQuery   ← available to the overlay
-     └─ L10nEditOverlay                                   ← builder
-         └─ Navigator (child)                             ← every route, dialog and page
+InContextEditor                                           ← provides EditorConfig and the three blocs
+ └─ MaterialApp
+     └─ Theme, ScaffoldMessenger, Localizations, MediaQuery   ← available to the overlay
+         └─ L10nEditOverlay                                   ← builder
+             └─ Overlay.wrap                                  ← the overlay's own Overlay
+                 └─ Navigator (child)                         ← every route, dialog and page
 ```
 
-Sitting **above the Navigator** has two consequences:
+Sitting **above the Navigator** has these consequences:
 
 | Consequence | How the code handles it |
 | --- | --- |
 | It stays on screen across every route, so the toolbar is always visible | Nothing to do: that's the point |
-| `showDialog(context)` and `Navigator.of(context)` don't work from the overlay's own `context` (there is no Navigator above it) | Dialogs and pages open through `navigatorKey.currentContext` and `navigatorKey.currentState` |
-| There is no `Overlay` above it, so `Tooltip` would throw | The toolbar's buttons have no tooltips |
-| `ScaffoldMessenger` *is* above it | Snackbars use `ScaffoldMessenger.of(context)` and appear on the current page's `Scaffold` |
+| `showDialog(context)` and `Navigator.of(context)` don't work from the overlay's own `context` (there is no Navigator above it) | The overlay finds the app's Navigator itself: it walks down from its content to the first `NavigatorState`, which is the one `MaterialApp` builds. Dialogs and pages open through that Navigator's context. An app can pass `InContextEditor(navigatorKey:)` instead, but this app doesn't. |
+| There is no `Overlay` above it, so `Tooltip` would throw | The overlay wraps itself in `Overlay.wrap`, so the toolbar's buttons have tooltips |
+| `ScaffoldMessenger` *is* above it | Snackbars use `ScaffoldMessenger.maybeOf(context)` and appear on the current page's `Scaffold` |
 
-The overlay is installed whenever edit mode is compiled in, signed in or
-not, because the signed-out edit button lives in it too.
+The overlay is installed whenever edit mode is compiled in, with or without
+access, because the Edit button for people without access lives in it too.
 
 ## 2. The layer stack
 
-`build()` returns a `Stack` with `fit: StackFit.expand`. From bottom to top:
+`build()` returns a `Stack` with `fit: StackFit.expand`, inside
+`Overlay.wrap`. From bottom to top:
 
 ```
  4  Positioned (bottom right)  edit button, or the editor toolbar
@@ -65,19 +71,23 @@ not, because the signed-out edit button lives in it too.
 - **Layer 3** sits above the app but below the toolbar, so in pick mode the
   toolbar stays tappable (to cancel pick mode).
 - **Layer 4** is plain English text, never localized, so it carries no tags
-  and can't be picked by mistake.
+  and can't be picked by mistake. It is left out entirely for people without
+  access when `onRequestAccess` isn't set.
 
 ## 3. State it reacts to
 
-The overlay is a `BlocConsumer<L10nEditorCubit, L10nEditorState>`:
+`InContextEditor` provides three blocs above `MaterialApp`, and the overlay
+listens to all of them (`MultiBlocListener`, then `watch`/`select` in its
+builder):
 
-| State field | Effect |
+| Bloc / state field | Effect |
 | --- | --- |
-| `status` | `restoring`: the edit button is disabled while the old session is checked. `signedOut` or `signingIn`: the edit button. `editor`: the toolbar. |
-| `pickMode` | Adds or removes layer 3 |
-| `highlight` | Adds or removes layer 2, and starts or stops the ticker (§5) |
-| `unpublishedKeys` | Badge count on the key-table button |
-| `error` | Shown as a snackbar, then cleared (signed-in editors only; sign-in errors are shown inside the sign-in dialog) |
+| `EditorSessionBloc` `status` | `checking`: the edit button is disabled while the access data source gives its first answer. `noAccess`: the edit button. `editor`: the toolbar. |
+| `EditorSessionBloc` `failure` | Shown as a snackbar |
+| `EditorToolsCubit` `pickMode` | Adds or removes layer 3 |
+| `EditorToolsCubit` `highlight` | Adds or removes layer 2, and starts or stops the ticker (§5) |
+| `TranslationsBloc` `unpublishedCount` | Badge count on the key-table button |
+| `TranslationsBloc` `outcome` | A failed import, publish or sync is shown as a snackbar. Save failures are shown inside the edit dialog instead. Sign-in errors are shown inside the sign-in dialog. |
 
 ## 4. Pick mode
 
@@ -89,14 +99,18 @@ opaque behaviour makes it win the tap, so the button or list tile
 underneath **never fires**. That's why there's a separate pick mode instead
 of, say, long-press, which would clash with the app's own gestures.
 
-`onTapUp` calls `_pick(globalPosition)`, which first turns pick mode off,
-so each pick is one tap.
+`onTapUp` calls `_pick(globalPosition)`, which first turns pick mode off
+(`EditorToolsCubit.setPickMode(false)`), so each pick is one tap.
 
 ### 4.2 Finding the text under the finger: `keysAt`
 
 ```dart
-List<String> keysAt(RenderBox root, Offset globalPosition)
+List<String> keysAt(L10nCatalog catalog, RenderBox root, Offset globalPosition)
 ```
+
+The catalog (`appLocalizationsCatalog`, reached through the delegate passed
+to `InContextEditor`) is needed because a tag only stores a key's index in
+the catalog, not its name.
 
 **Step 1: a real hit test.**
 
@@ -127,8 +141,10 @@ String? _textOf(HitTestTarget target) => switch (target) {
 };
 ```
 
-`toPlainText()` keeps the zero-width tag characters, and
-`L10nKeyTag.keysIn` turns them back into key names. One paragraph can
+`toPlainText()` keeps the zero-width tag characters. `keysIn(catalog, text)`
+decodes them into catalog indexes (the package-internal `KeyTagCodec`) and
+looks up each key name; indexes outside the catalog are ignored. One
+paragraph can
 contain several tags, for example `Text('${l10n.a} · ${l10n.b}')`, so all
 of them are collected.
 
@@ -146,15 +162,15 @@ tagged text (§5.1) for one that contains the tap point.
 | Several | A "Which string?" list, then the edit dialog |
 
 The edit dialog opens through the navigator's context, so it gets a normal
-route with the `L10nEditorCubit` still reachable (the cubit is provided
-above `MaterialApp`).
+route with the blocs and `EditorConfig` still reachable (`InContextEditor`
+provides them above `MaterialApp`).
 
 ## 5. Highlight
 
 ### 5.1 Finding every tagged text: `findTaggedTexts`
 
 ```dart
-List<TaggedText> findTaggedTexts(RenderObject root)
+List<TaggedText> findTaggedTexts(L10nCatalog catalog, RenderObject root)
 ```
 
 It walks the render tree from the app's root. For each laid-out
@@ -189,12 +205,13 @@ those rebuild the overlay. So while Highlight is on, the overlay runs a
 
 ```
 every frame → _updateHighlights()
-              → findTaggedTexts(root)
+              → findTaggedTexts(catalog, root)
               → setState only if the rectangles changed
 ```
 
-The ticker is started and stopped from the bloc listener (`_syncHighlight`)
-and disposed with the widget. When nothing moves, the rectangles stay the
+The ticker is started and stopped from the `EditorSessionBloc` and
+`EditorToolsCubit` listeners (`_syncHighlight`), and disposed with the
+widget. When nothing moves, the rectangles stay the
 same and there's no extra rebuild. Walking the tree each frame is cheap at
 this size, and it only happens for a signed-in editor with Highlight on.
 
@@ -208,17 +225,21 @@ list of rectangles changes.
 
 | State | Shown in the bottom-right corner |
 | --- | --- |
-| Not signed in | Small FAB (`Icons.edit_note`) that opens the sign-in dialog. `heroTag: null`, because it sits outside any route. |
-| Signed in | A rounded panel. Its label reads "Editing drafts · *project-id*", or "Tap a text to edit it" in pick mode. Below are four buttons. |
+| No access | Small FAB (`Icons.edit_note`) that calls `InContextEditor.onRequestAccess` with the Navigator's context. In this app that opens `showEmailPasswordSignInDialog` (see [`app.dart`](../lib/src/app.dart)). Without `onRequestAccess` there is no FAB. `heroTag: null`, because it sits outside any route. |
+| Editor | A rounded panel. Its label reads "Editing drafts · *label*" (this app passes the Firebase project id as `label`), or "Tap a text to edit it" in pick mode. Below are the buttons. |
 
 | Button | Action |
 | --- | --- |
-| Cursor (`ads_click`) | `cubit.togglePickMode()` |
-| Highlight (`highlight_alt`) | `cubit.toggleHighlight()` |
-| Table (`table_rows_outlined`), with a badge | `navigatorKey.currentState.push(L10nKeyTablePage)`. The badge shows the number of unpublished key/language pairs. |
-| Logout | `cubit.signOut()` |
+| Cursor (`ads_click`) | `EditorToolsCubit.togglePickMode()` |
+| Highlight (`highlight_alt`) | `EditorToolsCubit.toggleHighlight()` |
+| Table (`table_rows_outlined`), with a badge | Pushes `L10nKeyTablePage` on the app's Navigator. The badge shows the number of unpublished key/language pairs. |
+| Logout | `InContextEditor.onSignOut` (in this app, `FirebaseL10nAccessDataSource.signOut`). Only shown when `onSignOut` is set. |
 
 Pick and Highlight use `IconButton.isSelected`, so they show as toggled on.
+Every button has a tooltip.
+
+The package never signs anyone in itself. Signing out only changes what the
+access data source's `watchEditor()` emits, and the overlay follows.
 
 ## 7. What it can't find
 
@@ -232,10 +253,15 @@ Pick and Highlight use `IconButton.isSelected`, so they show as toggled on.
 
 ## 8. Tests
 
-[`tagged_text_finder_test.dart`](../test/features/l10n_editor/tagged_text_finder_test.dart)
+[`tagged_text_finder_test.dart`](../../l10n_in_context/test/presentation/tagged_text_finder_test.dart)
 pumps a real `MaterialApp` and checks that:
 
 - tapping plain text, and text inside a `FilledButton`, returns the right
   key, and untagged text returns none;
 - text under `IgnorePointer` is found through the bounds fallback;
-- after pushing a route, only the new route's text is reported.
+- after pushing a route, only the new route's text is reported;
+- tag indexes outside the catalog are ignored.
+
+[`in_context_editor_test.dart`](../../l10n_in_context/test/presentation/in_context_editor_test.dart)
+covers the overlay end to end: no Edit button without `onRequestAccess`,
+and an editor picking a text, editing it and seeing the draft live.

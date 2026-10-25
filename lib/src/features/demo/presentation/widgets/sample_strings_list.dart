@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:l10n_in_context/l10n_in_context.dart';
 
 import '../../../../../l10n/app_localizations.dart';
-import '../../../../core/l10n/l10n_key_tag.dart';
 
 typedef _Sample = ({String key, String Function(AppLocalizations l10n) read});
 

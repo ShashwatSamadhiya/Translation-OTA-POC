@@ -8,8 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'l10n/app_localizations.dart';
 import 'src/app.dart';
 import 'src/core/config/env.dart';
-import 'src/features/l10n_editor/data/l10n_editor_data_source.dart';
-import 'src/features/l10n_editor/presentation/cubit/l10n_editor_cubit.dart';
+import 'src/features/l10n_editor/data/firebase_l10n_access_data_source.dart';
+import 'src/features/l10n_editor/data/firestore_l10n_translation_data_source.dart';
 import 'src/features/ota_translations/data/datasources/ota_local_data_source.dart';
 import 'src/features/ota_translations/data/datasources/ota_remote_data_source.dart';
 import 'src/features/ota_translations/data/repositories/ota_translation_repository_impl.dart';
@@ -41,25 +41,22 @@ Future<void> main() async {
   final editMode = Env.l10nEditMode && firestore != null;
 
   runApp(
-    MultiBlocProvider(
-      providers: [
-        BlocProvider(
-          create: (_) => OtaTranslationsCubit(
-            repository: repository,
-            initialLocale: initialLocale,
-          )..load(),
-        ),
-        if (editMode)
-          BlocProvider(
-            create: (_) => L10nEditorCubit(
-              FirebaseL10nEditorDataSource(
+    BlocProvider(
+      create: (_) => OtaTranslationsCubit(
+        repository: repository,
+        initialLocale: initialLocale,
+      )..load(),
+      child: OtaPocApp(
+        editorAccess: editMode
+            ? FirebaseL10nAccessDataSource(
                 auth: FirebaseAuth.instance,
                 firestore: firestore,
-              ),
-            )..start(),
-          ),
-      ],
-      child: OtaPocApp(editMode: editMode),
+              )
+            : null,
+        editorTranslations: editMode
+            ? FirestoreL10nTranslationDataSource(firestore)
+            : null,
+      ),
     ),
   );
 }

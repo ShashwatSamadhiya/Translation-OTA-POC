@@ -285,6 +285,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  fpdart:
+    dependency: transitive
+    description:
+      name: fpdart
+      sha256: f8e9d0989ba293946673e382c59ac513e30cb6746a9452df195f29e3357a73d4
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.0"
   frontend_server_client:
     dependency: transitive
     description:
@@ -357,6 +365,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.0"
+  l10n_in_context:
+    dependency: "direct main"
+    description:
+      path: "../l10n_in_context"
+      relative: true
+    source: path
+    version: "0.1.0"
   leak_tracker:
     dependency: transitive
     description:

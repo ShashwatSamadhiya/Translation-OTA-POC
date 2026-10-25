@@ -10,7 +10,7 @@ project. For how the app uses Firebase once it's set up, see
 | Project ID | `ota-translation` |
 | Plan | Spark (free) |
 | Firestore | `(default)` database, Standard edition |
-| Registered apps | Web |
+| Registered apps | Web, iOS, Android |
 
 ---
 
@@ -54,27 +54,28 @@ No other provider is needed.
 
 1. Choose the **Web** icon (`</>`), give it a nickname, and leave
    **Firebase Hosting** unticked.
-2. Copy the values from the `firebaseConfig` snippet it shows (see Part 2).
-   Ignore its npm and `<script>` instructions, which are for JavaScript
-   apps.
+2. Copy the values from the `firebaseConfig` snippet it shows into
+   `env/web.json` (see Part 2). Ignore its npm and `<script>` instructions,
+   which are for JavaScript apps.
 
 **Android** (when needed):
 
 - Package name: **`co.farmsetu.tolgee_poc`** (from
   `android/app/build.gradle.kts`).
-- Skip downloading `google-services.json`; the app passes its options from
-  the env file instead.
-- Copy the **App ID** into `FIREBASE_APP_ID_ANDROID`.
+- Download `google-services.json` only to read two values from it, for
+  `env/android.json`: `client[0].api_key[0].current_key` (API key) and
+  `client[0].client_info.mobilesdk_app_id` (App ID). Don't add the file to
+  the project; the app passes its options from the env file instead.
 
 **iOS** (when needed):
 
 - Bundle ID: **`co.farmsetu.tolgeePoc`** (from the Xcode project).
-- Skip `GoogleService-Info.plist` for the same reason.
-- Copy the **App ID** into `FIREBASE_APP_ID_IOS`.
+- Download `GoogleService-Info.plist` only to read `API_KEY` and
+  `GOOGLE_APP_ID` for `env/ios.json`. Don't add it to the project.
 
-All registered apps share the same API key, project ID and sender ID; only
-the App ID differs. You can find them again later under **Project settings
-→ General → Your apps**.
+All registered apps share the project ID and sender ID. The **API key and
+App ID differ per platform**. You can find them again later under
+**Project settings → General → Your apps**.
 
 ### Step 5: Create the editor accounts
 
@@ -126,29 +127,28 @@ After changing `firestore.rules`, deploy again with either option.
 
 ## Part 2: The project's code
 
-### Step 7: Env file
+### Step 7: Env files, one per platform
 
-Copy [`env/example.json`](../env/example.json) to `env/dev.json` and fill it
-in from the `firebaseConfig` snippet:
+Copy [`env/example.json`](../env/example.json) to `env/web.json`,
+`env/ios.json` and `env/android.json`, and fill each one from that
+platform's Firebase app:
 
-| `firebaseConfig` field | Env key |
-| --- | --- |
-| `apiKey` | `FIREBASE_API_KEY` |
-| `projectId` | `FIREBASE_PROJECT_ID` |
-| `messagingSenderId` | `FIREBASE_MESSAGING_SENDER_ID` |
-| `appId` (Web app) | `FIREBASE_APP_ID_WEB` |
-| `appId` (Android app) | `FIREBASE_APP_ID_ANDROID` |
-| `appId` (iOS app) | `FIREBASE_APP_ID_IOS` |
+| Env key | Web (`firebaseConfig`) | iOS (`GoogleService-Info.plist`) | Android (`google-services.json`) |
+| --- | --- | --- | --- |
+| `FIREBASE_API_KEY` | `apiKey` | `API_KEY` | `client[0].api_key[0].current_key` |
+| `FIREBASE_PROJECT_ID` | `projectId` | `PROJECT_ID` | `project_info.project_id` |
+| `FIREBASE_MESSAGING_SENDER_ID` | `messagingSenderId` | `GCM_SENDER_ID` | `project_info.project_number` |
+| `FIREBASE_APP_ID` | `appId` | `GOOGLE_APP_ID` | `client[0].client_info.mobilesdk_app_id` |
 
-`authDomain`, `storageBucket` and `measurementId` aren't needed; the app
-derives the first two from the project ID.
+Other values (`authDomain`, `storageBucket`, `measurementId`, …) aren't
+needed; the app derives the first two from the project ID.
 
 ```json
 {
   "FIREBASE_API_KEY": "AIza…",
   "FIREBASE_PROJECT_ID": "ota-translation",
   "FIREBASE_MESSAGING_SENDER_ID": "998490357884",
-  "FIREBASE_APP_ID_WEB": "1:998490357884:web:…",
+  "FIREBASE_APP_ID": "1:998490357884:ios:…",
   "L10N_EDIT_MODE": true
 }
 ```
@@ -156,7 +156,7 @@ derives the first two from the project ID.
 - `env/*.json` is gitignored. Only `env/example.json` is committed.
 - Leave out `L10N_EDIT_MODE` (or set it to `false`) for a build that behaves
   like a normal user's app: published text only, no edit button.
-- A platform without an App ID runs on bundled strings only.
+- A platform whose file has no App ID runs on bundled strings only.
 
 ### What was already done in the code
 
@@ -168,9 +168,10 @@ You don't need to repeat these; they're listed so the setup is complete.
 | Firebase options from the env file | `lib/src/core/config/env.dart` |
 | `Firebase.initializeApp` and wiring | `lib/main.dart` |
 | Firestore delivery | `lib/src/features/ota_translations/data/datasources/ota_remote_data_source.dart` |
-| Editor auth and data | `lib/src/features/l10n_editor/` |
+| Editor auth and data (the Firebase side of the `l10n_in_context` package) | `lib/src/features/l10n_editor/data/` |
+| In-context editor (UI, state, generator) | `../l10n_in_context/` |
 | Security rules, index exemptions, CLI config | `firestore.rules`, `firestore.indexes.json`, `firebase.json` |
-| Run configurations | `.vscode/launch.json` (both use `env/dev.json`) |
+| Run configurations | `.vscode/launch.json`: one per platform, each with its own env file |
 
 No native Firebase files were added. `google-services.json`, the iOS plist
 and the Gradle Google Services plugin aren't used, because the options are
@@ -183,11 +184,24 @@ passed in code.
 ### Step 8: Run the app
 
 ```sh
-fvm flutter gen-l10n && fvm dart run tool/gen_ota_localizations.dart
-fvm flutter run -d chrome --dart-define-from-file=env/dev.json
+fvm flutter gen-l10n && fvm dart run l10n_in_context:generate
+
+# Web
+fvm flutter run -d chrome --dart-define-from-file=env/web.json
+
+# iOS simulator
+open -a Simulator
+fvm flutter run -d "iPhone 17 Pro" --dart-define-from-file=env/ios.json
+
+# Android emulator
+fvm flutter emulators --launch Medium_Phone_API_36.1
+fvm flutter run -d emulator --dart-define-from-file=env/android.json
 ```
 
-Or use the **Dev · Chrome** launch configuration in VS Code.
+In VS Code, pick **Web · Chrome**, **iOS · simulator or iPhone** or
+**Android · emulator or phone** in Run and Debug. For iOS and Android, first
+select a matching device in the status bar: the launch configuration
+chooses the env file, and the selected device chooses where it runs.
 
 ### Step 9: Seed and publish
 
@@ -217,7 +231,8 @@ now appear in the Firestore console.
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| "Firebase is not configured" | The env file lacks the API key, the project ID, or the App ID for this platform | Fill in `env/dev.json`, and run with `--dart-define-from-file=env/dev.json` |
+| "Firebase is not configured" | That platform's env file lacks the API key, the project ID or the App ID | Fill in `env/<platform>.json`, and run with `--dart-define-from-file=env/<platform>.json` |
+| Firebase errors on one platform only (invalid API key, app not found) | The app was started with another platform's env file | Use the matching launch configuration or env file |
 | No edit button | `L10N_EDIT_MODE` isn't `true`, or Firebase isn't configured | Check the env file |
 | "Could not fetch translations: … permission-denied" | Rules not deployed (production mode denies everything) | Step 6 |
 | "*email* is not an editor." | No `editors/{uid}` document, or the document ID doesn't match the UID exactly | Step 5. Copy the UID again. |
@@ -225,4 +240,4 @@ now appear in the Firestore console.
 | Save fails with "Missing or insufficient permissions" | Rules out of date, or the editor document was removed | Deploy the rules again, or check `editors` |
 | Edits show for the editor but not for users | Not published yet | **Keys → Publish** |
 | Users still see old text after publishing | The app hasn't fetched since | Return to the app, or tap **Fetch from Firestore** |
-| Changed an ARB file and the editor shows old keys | Generated files are stale | Run `fvm flutter gen-l10n && fvm dart run tool/gen_ota_localizations.dart` |
+| Changed an ARB file and the editor shows old keys | Generated files are stale | Run `fvm flutter gen-l10n && fvm dart run l10n_in_context:generate` |

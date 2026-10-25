@@ -16,7 +16,7 @@ multi-project plan (QA edits, promote to prod) is in
 | Doc | Covers |
 | --- | --- |
 | [HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) | OTA delivery, caching, what ICU is and how a message is rendered |
-| [LOCALIZATION_AND_GENERATOR.md](docs/LOCALIZATION_AND_GENERATOR.md) | Flutter localization, the OTA delegate and the generator script |
+| [LOCALIZATION_AND_GENERATOR.md](docs/LOCALIZATION_AND_GENERATOR.md) | Flutter localization, the override delegate and the generator |
 | [IN_CONTEXT_EDITING.md](docs/IN_CONTEXT_EDITING.md) | The editing flow: sign-in, key tags, edit dialog, publish |
 | [EDIT_OVERLAY.md](docs/EDIT_OVERLAY.md) | How `L10nEditOverlay` finds the string under a tap and draws highlights |
 | [FIREBASE.md](docs/FIREBASE.md) | How the app connects to Firebase, the data model, security rules, limits |
@@ -28,9 +28,16 @@ Edit mode (editors) ──Save──► translations_draft/{lang} ──Publish�
 FirestoreOtaDataSource ─► OtaTranslationRepository ─► OtaTranslationsCubit ◄┘
         cache ◄── OtaLocalDataSource (SharedPreferences)        │
                                                                 ▼
-                         OtaLocalizationsDelegate ─► OtaAppLocalizations
-                         (replaces AppLocalizations.delegate)
+                 AppLocalizationsOverrideDelegate ─► AppLocalizationsOverride
+                 (generated; replaces AppLocalizations.delegate)
 ```
+
+The in-context editor itself is a local package,
+[`../l10n_in_context`](../l10n_in_context/README.md). The app
+only supplies the Firebase side: who may edit
+(`FirebaseL10nAccessDataSource`) and where drafts and published strings live
+(`FirestoreL10nTranslationDataSource`), both in
+`lib/src/features/l10n_editor/data/`.
 
 - Screens still call `AppLocalizations.of(context).foo`, so no call site changes.
 - For each key the app uses the published string if there is one. It falls
@@ -39,10 +46,12 @@ FirestoreOtaDataSource ─► OtaTranslationRepository ─► OtaTranslationsCub
 - At startup the app shows cached strings first, then reads Firestore once.
   It reads again when the app returns to the foreground. App users never
   keep a live listener open, so the cost is one read per fetch.
-- `IcuMessageFormatter` formats the parts of ICU that gen-l10n accepts at
-  runtime: `{arg}`, `plural` (`=N`, CLDR categories, `#`) and `select`.
+- `IcuMessageFormatter` (in the package) formats the parts of ICU that
+  gen-l10n accepts at runtime: `{arg}`, `plural` (`=N`, CLDR categories, `#`)
+  and `select`.
 - New packages: `cloud_firestore` and `firebase_auth` (`firebase_core` is
-  already in aqua_setu).
+  already in aqua_setu), plus the local `l10n_in_context` package, which
+  brings `flutter_bloc`, `equatable` and `fpdart`.
 
 ## In-context editing
 
@@ -76,7 +85,8 @@ Full step-by-step walkthrough with troubleshooting:
    (`co.farmsetu.tolgee_poc`) and **iOS** (`co.farmsetu.tolgeePoc`). No
    `google-services.json` or plist is needed: the app passes its options
    from the env file.
-4. Copy `env/example.json` to `env/dev.json` and fill in the values from
+4. Copy `env/example.json` to `env/web.json`, `env/ios.json` and
+   `env/android.json`, and fill each one from that platform's app in
    Project settings (`env/*.json` is gitignored).
 5. Deploy the security rules and the index exemption for `messages`:
 
@@ -93,9 +103,14 @@ Full step-by-step walkthrough with troubleshooting:
 ## Run
 
 ```sh
-fvm flutter gen-l10n && fvm dart run tool/gen_ota_localizations.dart
-fvm flutter run -d chrome --dart-define-from-file=env/dev.json
+fvm flutter gen-l10n && fvm dart run l10n_in_context:generate
+fvm flutter run -d chrome --dart-define-from-file=env/web.json            # Web
+fvm flutter run -d "iPhone 17 Pro" --dart-define-from-file=env/ios.json   # iOS simulator
+fvm flutter run -d emulator --dart-define-from-file=env/android.json      # Android emulator
 ```
+
+In VS Code, use the **Web · Chrome**, **iOS · simulator or iPhone** and
+**Android · emulator or phone** launch configurations.
 
 First run against an empty project: sign in, open **Keys**, tap **Import
 bundled ARB**, then **Publish**. After that, edit any string with Pick,
@@ -107,23 +122,24 @@ ARB strings and shows "Firebase is not configured".
 
 ## Adding or changing an ARB key
 
-`OtaAppLocalizations` and the key catalog the editor uses
-(`lib/src/core/l10n/l10n_key_catalog.dart`) are generated, so never edit
-them by hand. After changing any ARB file, run:
+`lib/l10n/app_localizations_override.dart` is generated, so never edit it
+by hand. It holds the key catalog the editor uses
+(`appLocalizationsCatalog`), `AppLocalizationsOverride` and
+`AppLocalizationsOverrideDelegate`. After changing any ARB file, run:
 
 ```sh
-fvm flutter gen-l10n && fvm dart run tool/gen_ota_localizations.dart
+fvm flutter gen-l10n && fvm dart run l10n_in_context:generate
 ```
 
-- The script reads the signatures from the generated `AppLocalizations` class,
-  so parameter names, types and order always match gen-l10n.
+- The generator reads the signatures from the generated `AppLocalizations`
+  class, so parameter names, types and order always match gen-l10n.
 - A key whose placeholder has a `format` (a date or number format) or a
-  `DateTime` type is generated as **bundled only**, and the script lists it.
-  The runtime formatter can't reproduce those formats.
-- If you skip the script, the build fails, because the new abstract member has
-  no override. A key can never silently miss out on OTA updates.
-- In CI, `fvm dart run tool/gen_ota_localizations.dart --check` exits with
-  code 1 when the generated file is out of date.
+  `DateTime` type is generated as **bundled only**, and the generator lists
+  it. The runtime formatter can't reproduce those formats.
+- If you skip the generator, the build fails, because the new abstract member
+  has no override. A key can never silently miss out on OTA updates.
+- In CI, `fvm dart run l10n_in_context:generate --check` exits with code 1
+  when the generated file is out of date.
 
 ## Checklist
 
@@ -136,7 +152,7 @@ fvm flutter gen-l10n && fvm dart run tool/gen_ota_localizations.dart
 | Are late responses for a previous language dropped? | ✅ cubit tests |
 | Does a tap find the right key, including inside buttons, and skip hidden routes? | ✅ widget tests |
 | Are invalid ICU and mismatched placeholders blocked before saving? | ✅ unit tests, incl. every bundled message passing |
-| Do sign-in, editor check, save, import and publish behave? | ✅ cubit tests with a fake data source |
+| Do the editor check, save, import and publish behave? | ✅ package bloc tests with in-memory data sources |
 | Do the Web and Android builds compile with Firebase? | ✅ `flutter build web` / `apk --debug` |
 | Does it work end to end against a real Firebase project? | ⏳ needs the setup above |
 | Do the security rules reject non-editors? | ⏳ needs the setup above |
@@ -159,8 +175,9 @@ fvm flutter gen-l10n && fvm dart run tool/gen_ota_localizations.dart
 
 ## If adopted in aqua_setu
 
-- Copy `tool/gen_ota_localizations.dart` across and update its output
-  paths. It has been tested against aqua_setu's full ARB files (151 keys).
+- Add the `l10n_in_context` package and run its generator; it reads
+  `l10n.yaml`, so no paths need changing. The generator has been tested
+  against aqua_setu's full ARB files (151 keys).
 - Register the repository and cubits in GetIt. Load cached strings before
   `runApp` to avoid one frame of bundled text.
 - Move to the multi-project plan in

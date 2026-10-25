@@ -32,27 +32,42 @@ For the editing flow on top of this, see
 
 There is no `google-services.json`, `GoogleService-Info.plist` or generated
 `firebase_options.dart`. [`env.dart`](../lib/src/core/config/env.dart) builds
-`FirebaseOptions` from `--dart-define-from-file` values:
+`FirebaseOptions` from `--dart-define-from-file` values. Each platform has
+its own env file, because Firebase gives each registered app its own API key
+and App ID:
+
+| Platform | Env file | VS Code launch configuration |
+| --- | --- | --- |
+| Web | `env/web.json` | **Web · Chrome** |
+| iOS | `env/ios.json` | **iOS · simulator or iPhone** |
+| Android | `env/android.json` | **Android · emulator or phone** |
+
+Every file has the same keys:
 
 | Env key | `FirebaseOptions` field |
 | --- | --- |
 | `FIREBASE_API_KEY` | `apiKey` |
 | `FIREBASE_PROJECT_ID` | `projectId`. `authDomain` and `storageBucket` are derived from it. |
 | `FIREBASE_MESSAGING_SENDER_ID` | `messagingSenderId` |
-| `FIREBASE_APP_ID_WEB` / `_ANDROID` / `_IOS` | `appId`, chosen for the running platform |
+| `FIREBASE_APP_ID` | `appId` |
+| `L10N_EDIT_MODE` | Not a Firebase option: turns on in-context editing |
 
 `Env.firebaseOptions` returns `null` when the API key, the project ID or the
-current platform's app ID is missing.
+App ID is missing.
+
+Running a platform with another platform's file (for example iOS with
+`env/web.json`) gives it the wrong App ID. Always pick the matching launch
+configuration.
 
 Why this approach:
 
 - The project **always compiles**, even without any Firebase files, which
   matters for tests and CI.
 - A missing config isn't a crash: the app falls back to bundled ARB text.
-- Switching projects means switching env files, which is how aqua_setu
-  handles flavors.
+- Switching platform or project means switching env files, which is how
+  aqua_setu handles flavors.
 
-The Firebase **Web API key is not a secret**: it only identifies the
+Firebase **API keys are not secrets**: it only identifies the
 project, and access is controlled by the security rules. `env/*.json` is
 gitignored anyway, and only `env/example.json` is committed.
 
@@ -79,7 +94,7 @@ final editMode = Env.l10nEditMode && firestore != null;
 | --- | --- |
 | No Firebase config | `remote` is null. The repository returns `NotConfiguredFailure`, and the POC screen says "Firebase is not configured". Bundled strings only. |
 | Firebase config, no `L10N_EDIT_MODE` | OTA delivery only. The editor isn't created and is tree-shaken out. |
-| Both | Delivery plus an `L10nEditorCubit` built on `FirebaseL10nEditorDataSource(auth, firestore)` |
+| Both | Delivery plus the in-context editor, built on `FirebaseL10nAccessDataSource(auth:, firestore:)` and `FirestoreL10nTranslationDataSource(firestore)` |
 
 ## 3. Data model
 
@@ -184,16 +199,30 @@ return parseMessages(snapshot.data());
 
 ## 5. Editors: auth and live data
 
-[`l10n_editor_data_source.dart`](../lib/src/features/l10n_editor/data/l10n_editor_data_source.dart)
-defines `L10nEditorDataSource` (an interface, so the cubit can be tested
-with a fake) and its Firebase implementation:
+The editor lives in the
+[`l10n_in_context`](../../l10n_in_context/README.md) package, which
+knows nothing about Firebase. It defines two interfaces, and the app
+implements both in
+[`lib/src/features/l10n_editor/data/`](../lib/src/features/l10n_editor/data/)
+(the package's tests use in-memory implementations instead):
+
+[`firebase_l10n_access_data_source.dart`](../lib/src/features/l10n_editor/data/firebase_l10n_access_data_source.dart),
+`FirebaseL10nAccessDataSource implements L10nAccessDataSource`:
 
 | Method | Firebase call |
 | --- | --- |
-| `restoreUser()` | `FirebaseAuth.authStateChanges().first`. On Web the saved session loads asynchronously, so `currentUser` would still be null at start-up. |
-| `signIn(email, password)` | `signInWithEmailAndPassword` |
-| `signOut()` | `FirebaseAuth.signOut` |
-| `isEditor(uid)` | `get()` on `editors/{uid}`, checking `exists` |
+| `watchEditor()` | `FirebaseAuth.authStateChanges()`, mapped to `EditorUser(id: uid, displayName: email)` when `editors/{uid}` exists, else `null`. It also restores an earlier session; on Web the saved session loads asynchronously, so `currentUser` would still be null at start-up. |
+| `signIn(email, password)` | `signInWithEmailAndPassword`, then the `editors/{uid}` check; signs out again if it fails. Not part of the interface: `app.dart` passes it to `showEmailPasswordSignInDialog`. |
+| `signOut()` | `FirebaseAuth.signOut`. Not part of the interface: `app.dart` passes it as `onSignOut`. |
+
+The `editors/{uid}` check is a `get()` checking `exists`. The package never
+signs anyone in; it only follows `watchEditor()`.
+
+[`firestore_l10n_translation_data_source.dart`](../lib/src/features/l10n_editor/data/firestore_l10n_translation_data_source.dart),
+`FirestoreL10nTranslationDataSource implements L10nTranslationDataSource`:
+
+| Method | Firebase call |
+| --- | --- |
 | `watchDrafts()` | `snapshots()` on the whole `translations_draft` collection |
 | `watchPublished()` | `snapshots()` on the whole `translations_published` collection |
 | `saveDraft(...)` | Batch: `set(merge: true)` on `translations_draft/{lang}` with `messages: {key: value}`, plus `set` on a new history document |
@@ -211,11 +240,14 @@ Points worth knowing:
   device clocks don't matter.
 - **Live updates.** Both `snapshots()` streams push every change to every
   signed-in editor, which is how one editor's save appears on another's
-  screen. The cubit cancels both subscriptions on sign-out and when it's
-  closed.
+  screen. The package's `TranslationsBloc` cancels both subscriptions when
+  edit access ends and when it's closed.
 - **Errors** from Firebase (`FirebaseException`, including
-  `FirebaseAuthException`) are caught in the cubit and shown as text: inside
-  the sign-in dialog, inside the edit dialog, or as a snackbar.
+  `FirebaseAuthException`) are caught in the data sources and rethrown as
+  the package's `L10nDataSourceException`. The package's repositories turn
+  them into failures, which are shown as text inside the edit dialog or as a
+  snackbar. Sign-in errors are returned by `signIn` and shown inside the
+  sign-in dialog.
 
 ## 6. Security rules
 

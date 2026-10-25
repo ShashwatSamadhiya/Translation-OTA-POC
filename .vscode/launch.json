@@ -2,13 +2,13 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Dev · Chrome",
+      "name": "Web · Chrome",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
       "deviceId": "chrome",
       "args": [
-        "--dart-define-from-file=env/dev.json"
+        "--dart-define-from-file=env/web.json"
       ],
       "codeLens": {
         "for": [
@@ -16,16 +16,16 @@
           "debug-file"
         ],
         "path": "lib/main.dart",
-        "title": "${debugType} · Chrome"
+        "title": "${debugType} · Web"
       }
     },
     {
-      "name": "Dev · device",
+      "name": "iOS · simulator or iPhone",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
       "args": [
-        "--dart-define-from-file=env/dev.json"
+        "--dart-define-from-file=env/ios.json"
       ],
       "codeLens": {
         "for": [
@@ -33,7 +33,24 @@
           "debug-file"
         ],
         "path": "lib/main.dart",
-        "title": "${debugType} · device"
+        "title": "${debugType} · iOS"
+      }
+    },
+    {
+      "name": "Android · emulator or phone",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define-from-file=env/android.json"
+      ],
+      "codeLens": {
+        "for": [
+          "run-file",
+          "debug-file"
+        ],
+        "path": "lib/main.dart",
+        "title": "${debugType} · Android"
       }
     }
   ]
