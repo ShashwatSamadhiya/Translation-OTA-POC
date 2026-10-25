@@ -1,5 +1,5 @@
 name: tolgee_poc
-description: "POC: over-the-air translations from Tolgee CDN on top of gen-l10n."
+description: "POC: over-the-air translations from Firestore and in-context editing on top of gen-l10n."
 publish_to: 'none'
 version: 0.1.0+1
 
@@ -7,15 +7,19 @@ environment:
   sdk: ^3.13.5
 
 dependencies:
+  cloud_firestore: ^6.10.0
   dartz: ^0.10.1
-  dio: ^5.11.1
   equatable: ^2.0.7
+  firebase_auth: ^6.7.0
+  firebase_core: ^4.15.0
   flutter:
     sdk: flutter
   flutter_bloc: ^9.1.0
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.2
+  l10n_in_context:
+    path: ../l10n_in_context
   shared_preferences: ^2.2.0
 
 dev_dependencies:

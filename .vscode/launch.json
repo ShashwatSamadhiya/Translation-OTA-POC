@@ -2,14 +2,13 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Dev · Chrome (mock CDN)",
+      "name": "Web · Chrome",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
       "deviceId": "chrome",
-      "preLaunchTask": "Mock CDN",
       "args": [
-        "--dart-define-from-file=env/dev.json"
+        "--dart-define-from-file=env/web.json"
       ],
       "codeLens": {
         "for": [
@@ -17,17 +16,16 @@
           "debug-file"
         ],
         "path": "lib/main.dart",
-        "title": "${debugType} · Chrome"
+        "title": "${debugType} · Web"
       }
     },
     {
-      "name": "Dev · iOS simulator (mock CDN)",
+      "name": "iOS · simulator or iPhone",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
-      "preLaunchTask": "Mock CDN",
       "args": [
-        "--dart-define-from-file=env/dev.json"
+        "--dart-define-from-file=env/ios.json"
       ],
       "codeLens": {
         "for": [
@@ -39,13 +37,12 @@
       }
     },
     {
-      "name": "Dev · Android emulator (mock CDN)",
+      "name": "Android · emulator or phone",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
-      "preLaunchTask": "Mock CDN",
       "args": [
-        "--dart-define-from-file=env/dev-android.json"
+        "--dart-define-from-file=env/android.json"
       ],
       "codeLens": {
         "for": [
@@ -54,23 +51,6 @@
         ],
         "path": "lib/main.dart",
         "title": "${debugType} · Android"
-      }
-    },
-    {
-      "name": "Tolgee Cloud",
-      "request": "launch",
-      "type": "dart",
-      "program": "lib/main.dart",
-      "args": [
-        "--dart-define-from-file=env/tolgee.json"
-      ],
-      "codeLens": {
-        "for": [
-          "run-file",
-          "debug-file"
-        ],
-        "path": "lib/main.dart",
-        "title": "${debugType} · Tolgee"
       }
     }
   ]

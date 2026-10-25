@@ -1,6 +1,7 @@
-# How the Tolgee OTA POC works
+# How the OTA translations POC works
 
-This POC updates translations from Tolgee Cloud without a new app release.
+This POC updates translations from Firestore without a new app release, and
+lets editors change them in context, inside the running app.
 Screens still call `AppLocalizations.of(context).retry`, just as aqua_setu does
 today. The bundled ARB files stay in the app as the offline fallback.
 
@@ -9,28 +10,28 @@ For setup and run steps, see the [README](../README.md).
 ## 1. Architecture
 
 ```
-Tolgee Cloud ─publish─► cdn.tolg.ee/<hash>/hi.json   (public file, no API key)
+Editors (edit mode) ─Publish─► Firestore translations_published/hi   (public read)
                                 │
-          OtaRemoteDataSource   │  downloads it with Dio
+          FirestoreOtaDataSource│  one get() per session, resume and language change
                                 ▼
           OtaTranslationRepository ──► caches it on the device (SharedPreferences)
                                 ▼
           OtaTranslationsCubit   holds { locale, bundle, source, isRefreshing, failure }
                                 ▼
-          OtaLocalizationsDelegate  ──► OtaAppLocalizations
-          (replaces AppLocalizations.delegate)
+          AppLocalizationsOverrideDelegate  ──► AppLocalizationsOverride
+          (generated; replaces AppLocalizations.delegate)
 ```
 
 | Piece | What it does |
 | --- | --- |
-| [`ota_remote_data_source.dart`](../lib/src/features/ota_translations/data/datasources/ota_remote_data_source.dart) | Downloads `<cdn>/<lang>.json` and flattens it into a `key → message` map. It reads the body as plain text because Tolgee serves `application/octet-stream`. It rejects anything that isn't a JSON object, such as the XML 404 page. |
+| [`ota_remote_data_source.dart`](../lib/src/features/ota_translations/data/datasources/ota_remote_data_source.dart) | Reads `translations_published/{lang}` once (no live listener, so app users cost one read per fetch) and returns its `messages` map. A missing document means no OTA strings yet. |
 | [`ota_local_data_source.dart`](../lib/src/features/ota_translations/data/datasources/ota_local_data_source.dart) | Stores the last good download per language, so OTA strings survive a restart and work offline. A corrupt entry is deleted. |
 | [`ota_translation_repository_impl.dart`](../lib/src/features/ota_translations/data/repositories/ota_translation_repository_impl.dart) | Maps errors to `Either<Failure, OtaTranslationBundle>`: not configured, network, or invalid payload. A failed cache write does not hide fresh strings. |
 | [`ota_translations_cubit.dart`](../lib/src/features/ota_translations/presentation/cubit/ota_translations_cubit.dart) | Emits the cached copy first, then downloads the latest. It ignores a refresh while one is in progress, and drops a late response for a language the user has already switched away from. |
 | [`ota_refresh_on_resume.dart`](../lib/src/features/ota_translations/presentation/widgets/ota_refresh_on_resume.dart) | Downloads again whenever the app returns to the foreground. |
-| [`ota_localizations_delegate.dart`](../lib/src/features/ota_translations/presentation/l10n/ota_localizations_delegate.dart) | Takes the place of `AppLocalizations.delegate` and chooses between OTA and bundled strings. |
-| [`ota_app_localizations.dart`](../lib/src/features/ota_translations/presentation/l10n/ota_app_localizations.dart) | Overrides each key so the OTA string is used first, with a per-key fallback to the bundled string. |
-| [`icu_message_formatter.dart`](../lib/src/core/l10n/icu_message_formatter.dart) | Formats ICU messages at runtime. |
+| [`app_localizations_override.dart`](../lib/l10n/app_localizations_override.dart) (generated) | `AppLocalizationsOverrideDelegate` takes the place of `AppLocalizations.delegate` and chooses between OTA and bundled strings. `AppLocalizationsOverride` overrides each key so the OTA string is used first, with a per-key fallback to the bundled string. [`app.dart`](../lib/src/app.dart) builds the delegate from the cubit's bundle. |
+| [`l10n_override_delegate.dart`](../../l10n_in_context/lib/src/presentation/l10n/l10n_override_delegate.dart), [`l10n_message_resolver.dart`](../../l10n_in_context/lib/src/presentation/l10n/l10n_message_resolver.dart) (package) | The delegate's base class, and the per-key override-or-fallback logic the generated getters call. |
+| [`icu_message_formatter.dart`](../../l10n_in_context/lib/src/core/l10n/icu_message_formatter.dart) (package) | Formats ICU messages at runtime. |
 
 ## 2. What ICU is
 
@@ -75,39 +76,51 @@ message:
 ### Step 1: the delegate chooses the implementation
 
 Flutter asks every `LocalizationsDelegate` to load the current locale.
-`OtaLocalizationsDelegate` is registered in [`app.dart`](../lib/src/app.dart)
-in place of `AppLocalizations.delegate`.
+`AppLocalizationsOverrideDelegate` is registered in
+[`app.dart`](../lib/src/app.dart) in place of `AppLocalizations.delegate`,
+with the OTA bundle as `messages: {bundle.languageCode: bundle.messages}`.
 
-- If there is an OTA bundle for this language, it returns
-  `OtaAppLocalizations`.
-- Otherwise it returns the normal generated class.
+- If there are OTA messages for this language (an exact match such as
+  `pt_BR` first, then the language alone), it returns
+  `AppLocalizationsOverride`.
+- Otherwise it returns the normal generated class (unless edit mode needs
+  tags, see [IN_CONTEXT_EDITING.md](IN_CONTEXT_EDITING.md)).
 - It returns a `SynchronousFuture`, so the first frame always has strings.
-- When the cubit emits a new bundle, `shouldReload` returns true and Flutter
-  rebuilds every widget that reads `AppLocalizations`. That is how the screen
-  updates without a restart.
+- When the cubit emits a new bundle, `app.dart` builds a new delegate,
+  `shouldReload` returns true (the messages differ) and Flutter rebuilds
+  every widget that reads `AppLocalizations`. That is how the screen updates
+  without a restart.
 
 ### Step 2: the override checks the OTA string first
 
 ```dart
 @override
-String pondCount(int count) =>
-    _resolve('pondCount', () => _bundled.pondCount(count), {'count': count});
+String pondCount(int count) => _messages.resolve(
+  11,
+  'pondCount',
+  () => _bundled.pondCount(count),
+  {'count': count},
+);
 ```
 
-`_resolve` looks up the OTA message. If it is missing or empty, or the
-formatter returns `null`, it uses the bundled ARB string **for that key only**.
+`_messages` is the package's `L10nMessageResolver`; `11` is the key's index
+in `appLocalizationsCatalog`, used only for edit-mode tags. `resolve` looks
+up the OTA message. If it is missing or empty, or the formatter returns
+`null`, it uses the bundled ARB string **for that key only**.
 
-`OtaAppLocalizations` extends the generated abstract class, so adding an ARB
-key without an override fails to compile. The class is generated by
-[`tool/gen_ota_localizations.dart`](../tool/gen_ota_localizations.dart):
+`AppLocalizationsOverride` extends the generated abstract class, so adding
+an ARB key without an override fails to compile. The class is generated by
+`fvm dart run l10n_in_context:generate`
+([`generator.dart`](../../l10n_in_context/lib/src/generator/generator.dart)):
 
-1. The script reads every `String get key;` and `String key(Type a);`
+1. The generator reads every `String get key;` and `String key(Type a);`
    declaration from the gen-l10n output.
-2. It writes one override per declaration: the key name, the fallback call and
-   the arguments map.
+2. It writes one override per declaration: the catalog index, the key name,
+   the fallback call and the arguments map.
 3. A key whose placeholder declares a `format` (e.g. a date or `compact`) or a
-   non-plain type such as `DateTime` becomes `=> _bundled.key(...)`, because
-   the runtime formatter can't reproduce those formats.
+   non-plain type such as `DateTime` becomes
+   `=> _messages.bundledOnly(index, () => _bundled.key(...))`, because the
+   runtime formatter can't reproduce those formats.
 
 ### Step 3: the formatter parses the message
 
@@ -134,7 +147,7 @@ Any syntax error, such as unbalanced braces or a missing `other`, throws a
    matching argument (for example a translator typed `{humidty}`), the
    formatter throws, returns `null`, and the bundled string is shown.
 
-This is the main safety net: a mistake made in Tolgee can never put broken
+This is the main safety net: a mistake that slips past the editor's checks can never put broken
 text on screen. At worst, that one key shows its bundled version.
 
 ### Limits
@@ -152,8 +165,20 @@ These match how `gen-l10n` behaves:
 | --- | --- |
 | First launch, offline | Bundled ARB strings |
 | Offline with a cached bundle | Cached OTA strings |
-| CDN returns 404 (e.g. a language isn't published) | Cached or bundled strings, and a refresh-failed message on the POC screen |
-| CDN returns non-JSON | Same as a 404 (`InvalidPayloadFailure`) |
-| One key missing, empty or malformed in Tolgee | Bundled string for that key, OTA strings for the rest |
-| Tolgee has keys this build doesn't know | Ignored |
+| Firestore unreachable or times out (10 s) | Cached or bundled strings, and a refresh-failed message on the POC screen |
+| A language was never published | Bundled strings for that language |
+| `messages` is not a map | Same as unreachable (`InvalidPayloadFailure`) |
+| One key missing, empty or malformed | Bundled string for that key, OTA strings for the rest |
+| Firestore has keys this build doesn't know | Ignored |
 | User switches language mid-download | The late response is dropped |
+
+## 5. In-context editing
+
+Editors change translations inside the running app, and publish them to
+`translations_published`, which this delivery flow reads. See:
+
+- [IN_CONTEXT_EDITING.md](IN_CONTEXT_EDITING.md): the whole editing flow.
+- [EDIT_OVERLAY.md](EDIT_OVERLAY.md): how a tap on screen is traced back to
+  its ARB key.
+- [FIREBASE.md](FIREBASE.md): the Firestore data model, auth and security
+  rules.

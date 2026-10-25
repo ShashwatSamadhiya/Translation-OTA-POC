@@ -87,7 +87,7 @@
       }
     }
   },
-  "pocTitle": "Tolgee OTA POC",
+  "pocTitle": "Firebase OTA POC",
   "@pocTitle": {
     "description": "App bar title of the POC screen"
   },
@@ -103,21 +103,21 @@
   "@pocSourceCache": {
     "description": "Shown when OTA translations come from the local cache"
   },
-  "pocSourceNetwork": "Source: Tolgee CDN",
+  "pocSourceNetwork": "Source: Firestore",
   "@pocSourceNetwork": {
-    "description": "Shown when OTA translations were just fetched"
+    "description": "Shown when OTA translations were just fetched from Firestore"
   },
-  "pocRefresh": "Fetch from CDN",
+  "pocRefresh": "Fetch from Firestore",
   "@pocRefresh": {
-    "description": "Button that re-fetches OTA translations"
+    "description": "Button that re-fetches OTA translations from Firestore"
   },
-  "pocCdnNotConfigured": "TOLGEE_CDN_URL is not set, showing bundled strings only",
-  "@pocCdnNotConfigured": {
-    "description": "Shown when the CDN URL is missing from env"
+  "pocNotConfigured": "Firebase is not configured, showing bundled strings only",
+  "@pocNotConfigured": {
+    "description": "Shown when the Firebase options are missing from env"
   },
   "pocRefreshFailed": "Could not fetch translations: {reason}",
   "@pocRefreshFailed": {
-    "description": "Shown when the CDN fetch fails",
+    "description": "Shown when the Firestore fetch fails",
     "placeholders": {
       "reason": {
         "type": "String"

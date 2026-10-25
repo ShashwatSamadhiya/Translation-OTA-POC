@@ -9,7 +9,7 @@ import '../../../ota_translations/presentation/cubit/ota_translations_cubit.dart
 import '../../../ota_translations/presentation/cubit/ota_translations_state.dart';
 
 /// Shows where strings currently come from and lets the tester switch
-/// language or force a CDN fetch.
+/// language or force a Firestore fetch.
 class OtaStatusCard extends StatelessWidget {
   const OtaStatusCard({super.key});
 
@@ -46,7 +46,7 @@ class OtaStatusCard extends StatelessWidget {
                   gapSm,
                   Text(
                     failure is NotConfiguredFailure
-                        ? l10n.pocCdnNotConfigured
+                        ? l10n.pocNotConfigured
                         : l10n.pocRefreshFailed(failure.message),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.error,

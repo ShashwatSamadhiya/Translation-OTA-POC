@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:l10n_in_context/l10n_in_context.dart';
 
 import '../../../../../l10n/app_localizations.dart';
 
@@ -44,7 +45,9 @@ class SampleStringsList extends StatelessWidget {
             ListTile(
               title: Text(sample.read(l10n)),
               subtitle: Text(sample.key),
-              trailing: sample.read(l10n) == sample.read(bundled)
+              // Strip the edit-mode tag so only real text changes count.
+              trailing:
+                  L10nKeyTag.strip(sample.read(l10n)) == sample.read(bundled)
                   ? null
                   : Icon(Icons.cloud_done_outlined, color: colors.primary),
             ),

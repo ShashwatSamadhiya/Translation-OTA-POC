@@ -12,7 +12,7 @@ class OtaTranslationsCubit extends Cubit<OtaTranslationsState> {
 
   final OtaTranslationRepository _repository;
 
-  /// Shows cached strings immediately, then refreshes from the CDN.
+  /// Shows cached strings immediately, then refreshes from Firestore.
   Future<void> load() async {
     final languageCode = state.locale.languageCode;
     final cached = await _repository.getCached(languageCode);

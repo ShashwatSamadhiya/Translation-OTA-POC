@@ -4,7 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../cubit/ota_translations_cubit.dart';
 
 /// Re-fetches OTA strings whenever the app returns to the foreground, so a
-/// fix published in Tolgee reaches users without a cold start.
+/// fix published in the editor reaches users without a cold start.
 class OtaRefreshOnResume extends StatefulWidget {
   const OtaRefreshOnResume({required this.child, super.key});
 

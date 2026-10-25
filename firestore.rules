@@ -1,0 +1,49 @@
+rules_version = '2';
+
+// Single-project POC: drafts and published strings live side by side.
+// Collection names match lib/src/core/firebase/translations_firestore.dart.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isEditor() {
+      return request.auth != null
+          && exists(/databases/$(database)/documents/editors/$(request.auth.uid));
+    }
+
+    function isSupportedLang(lang) {
+      return lang in ['en', 'hi', 'mr', 'te'];
+    }
+
+    // What every app build reads. Public read is fine: the same strings
+    // ship inside the app. Add App Check before production.
+    match /translations_published/{lang} {
+      allow read: if true;
+      allow write: if isEditor() && isSupportedLang(lang)
+        && request.resource.data.publishedBy == request.auth.uid;
+    }
+
+    match /translations_draft/{lang} {
+      allow read: if isEditor();
+      allow create: if isEditor() && isSupportedLang(lang)
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow update: if isEditor() && isSupportedLang(lang)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['messages', 'updatedAt', 'updatedBy'])
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Append-only audit log.
+    match /translation_history/{id} {
+      allow read: if isEditor();
+      allow create: if isEditor()
+        && request.resource.data.editorUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Created by hand in the console, one document per editor uid.
+    match /editors/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+  }
+}
